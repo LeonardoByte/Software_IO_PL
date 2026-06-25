@@ -207,7 +207,7 @@ def _renderizar_paneles_resultados(resultado: RespuestaTabularPL, problema: Prob
 
 
 @ft.component
-def VistaMatricial(controlador: ControladorLineal, opcion_resolucion: int, titulo: str, descripcion: str):
+def VistaMatricial(controlador: ControladorLineal, opcion_resolucion: int, titulo: str, descripcion: str, navegar_a=None):
     problema: Optional[ProblemaPL] = controlador.problema_activo
 
     header = ft.Column([
@@ -250,17 +250,16 @@ def VistaMatricial(controlador: ControladorLineal, opcion_resolucion: int, titul
     # 4. Traducción de estado
     if resultado.estado == EstadoProblema.OPTIMO:
         status_row = _crear_alerta_status("Proceso concluido. Óptimo alcanzado.", GREEN, ft.Icons.CHECK_CIRCLE)
+        controles_resultado = [header, ft.Divider(color=BORDER_COLOR, height=1), status_row,
+                               ft.Column(_renderizar_paneles_resultados(resultado, problema, opcion_resolucion), spacing=14)]
+        return ft.Column(controles_resultado, expand=True, spacing=16, scroll=ft.ScrollMode.AUTO)
     elif resultado.estado == EstadoProblema.REQUIERE_OTRO_METODO:
         status_row = _crear_alerta_status("Desajuste de algoritmo: Las restricciones del modelo no encajan con este método.", AMBER, ft.Icons.WARNING_AMBER)
     else:
-        status_row = _crear_alerta_status(f"Conclusión anormal: {resultado.estado.name}", AMBER, ft.Icons.INFO_OUTLINE)
+        status_row = _crear_alerta_status(f"Conclusión: {resultado.estado.value}", AMBER, ft.Icons.INFO_OUTLINE)
 
-    resultados_column = ft.Column(
-        _renderizar_paneles_resultados(resultado, problema, opcion_resolucion),
-        spacing=14
-    )
-
+    # Estado no óptimo
     return ft.Column(
-        [header, ft.Divider(color=BORDER_COLOR, height=1), status_row, resultados_column],
+        [header, ft.Divider(color=BORDER_COLOR, height=1), status_row],
         expand=True, spacing=16, scroll=ft.ScrollMode.AUTO
     )

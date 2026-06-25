@@ -101,7 +101,7 @@ class SolucionadorDosFases:
             tableau_f1, fase=1
         )
 
-        # Si el óptimo de la Fase 1 es W > 0, el problema original es inviable
+        # T[0,-1] = -W_min en esta implementación; inviable cuando W_min > 0 ↔ T[0,-1] < 0
         if resultado_f1 == EstadoProblema.INVIABLE or (tableau_f1_final is not None and tableau_f1_final[0, -1] < Fraction(0)):
             return RespuestaTabularPL(
                 estado=EstadoProblema.INVIABLE,
@@ -374,8 +374,12 @@ class SolucionadorDosFases:
         n_filas, n_data_cols = T.shape
 
         etiqueta_obj = "W" if fase == 1 else "Z"
-        variables_base_actuales: List[str] = [nombres[self._base[i]] for i in range(self._n_restricciones)]
+        n_base = len(self._base)
+        variables_base_actuales: List[str] = [nombres[self._base[i]] for i in range(n_base)]
         col_base: List[str] = [etiqueta_obj] + variables_base_actuales
+        # Pad por si self._base tiene menos entradas que filas del tableau (caso degenerado)
+        while len(col_base) < n_filas:
+            col_base.append("?")
 
         tabla_completa = np.empty((n_filas, n_data_cols + 1), dtype=object)
         for i in range(n_filas):

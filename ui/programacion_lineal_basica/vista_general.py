@@ -88,7 +88,7 @@ def _crear_alerta_status(mensaje: str, color_hex: str, icono: ft.Icons = ft.Icon
 
 
 @ft.component
-def VistaGeneral(controlador: ControladorLineal):
+def VistaGeneral(controlador: ControladorLineal, navegar_a=None):
     problema: Optional[ProblemaPL] = controlador.problema_activo
 
     header = ft.Column([

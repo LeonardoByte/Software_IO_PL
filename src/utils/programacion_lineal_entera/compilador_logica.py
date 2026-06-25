@@ -191,7 +191,14 @@ class CompiladorLogico:
             # y es asignada si variable_control_asociada es de tipo 'xN' (Caso Suelto)
             # o si ya fue creada como 'a_i'. Si es None, creamos variable artificial intermedia.
             y: int
-            if nodo.variable_control_asociada is not None:
+            if nodo.operador == OperadorMGrande.SELECCION_K_DE_N:
+                # variable_control_asociada contiene K (un número), no un nombre de variable
+                y = len(tipos_vars)
+                tipos_vars.append(TipoVariable.BINARIA)
+                objetivo.append(Fraction(0))
+                art_name = f"a_{len(self.artificial_vars) + 1}"
+                self.artificial_vars[art_name] = y
+            elif nodo.variable_control_asociada is not None:
                 name = nodo.variable_control_asociada
                 if name.startswith("x"):
                     y = int(name[1:]) - 1

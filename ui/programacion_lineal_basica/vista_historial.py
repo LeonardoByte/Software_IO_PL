@@ -72,7 +72,7 @@ def _boton_accion_ui(texto: str, icono: ft.Icons, on_click, color: str = ACCENT_
 
 
 @ft.component
-def VistaHistorial(controlador: ControladorLineal, navegar_a=None):
+def VistaHistorial(controlador: ControladorLineal, navegar_a=None, ir_a_ingreso=None):
     refresh_trigger, set_refresh_trigger = ft.use_state(0)
     status_text_val, set_status_text_val = ft.use_state(("", "")) # (message, color)
 
@@ -89,7 +89,9 @@ def VistaHistorial(controlador: ControladorLineal, navegar_a=None):
     def manejador_clonar_y_editar(indice: int) -> None:
         controlador.obtener_problema_por_indice(indice)
         set_status_text_val(("Modelo clonado. Puedes alterar sus celdas en la ventana de ingreso.", AMBER))
-        if navegar_a:
+        if ir_a_ingreso:
+            ir_a_ingreso()
+        elif navegar_a:
             navegar_a(0)
         else:
             set_refresh_trigger(lambda x: x + 1)

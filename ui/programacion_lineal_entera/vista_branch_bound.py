@@ -402,8 +402,8 @@ def VistaBranchBound(controlador: ControladorEntera):
         )
         return ft.Column([header, ft.Divider(color=BORDER_COLOR, height=1), status_row, placeholder], expand=True, spacing=16, scroll=ft.ScrollMode.AUTO)
 
-    # 3. Resolver
-    resultado = controlador.resolver_PLE(problema, 1)
+    # 3. Usar resultado cacheado
+    resultado = resultado_ref.current
 
     # 4. Sin resultado
     if resultado is None:

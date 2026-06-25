@@ -63,7 +63,14 @@ class SolucionadorPlanosCorte:
 
             z_optimo = res_tabular.z_optimo
             variables_decision = res_tabular.variables_decision
-            if variables_decision is None: return RespuestaPlanoCorte(mensaje="Error en la solución")
+            if variables_decision is None:
+                return RespuestaPlanoCorte(
+                    estado=EstadoProblema.ERROR_SISTEMA_INTERNO,
+                    mensaje="Error en la solución",
+                    z_optimo=None,
+                    variables_decision=None,
+                    iteraciones=iteraciones_totales
+                )
 
             # Buscar variables enteras/binarias que tengan valor fraccionario
             fractional_vars = []

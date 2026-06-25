@@ -1,7 +1,8 @@
 # src/models/entity/programacion_lineal_entera/respuesta.py
 
 from dataclasses import dataclass
-from typing import List, Optional
+from fractions import Fraction
+from typing import List, Optional, Union
 from src.models.entity.programacion_lineal.enums import EstadoProblema
 from src.models.entity.programacion_lineal.respuesta import NumericoTabular
 from src.models.entity.programacion_lineal.respuesta import IteracionTabular
@@ -65,6 +66,6 @@ class PasoEnumeracion:
 class RespuestaEnumeracionImplicita:
     estado: EstadoProblema
     mensaje: str
-    z_optimo: Optional[int]           # Siempre será entero o binario
+    z_optimo: Optional[Union[int, Fraction]]  # Puede ser Fraction si se calculó con aritmética exacta
     variables_decision: Optional[List[int]]
     pasos: List[PasoEnumeracion]

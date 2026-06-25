@@ -26,6 +26,8 @@ GREEN: str = "#1d9e75"
 AMBER: str = "#f6ad55"
 RED: str = "#ef645f"
 
+_MODOS_LABELS = ["Tradicional por Celdas", "Lenguaje Natural (Algebraico)", "Coeficientes planos (CSV)"]
+
 
 def _crear_campo_ui(label: str, valor: str = "") -> ft.TextField:
     """Factory function para generar campos de texto estandarizados."""
@@ -63,28 +65,55 @@ def _crear_boton_ui(texto: str, icono: ft.Icons, on_click, color: Optional[str] 
     )
 
 
+def _estado_inicial_desde_problema(problema: ProblemaPL) -> dict:
+    """Construye el estado inicial del formulario a partir de un ProblemaPL."""
+    return {
+        "tipo": problema.tipo.value,
+        "objetivo": [str(c) for c in problema.objetivo],
+        "restricciones": [
+            {
+                "coeficientes": [str(c) for c in r.coeficientes],
+                "signo": r.signo.value,
+                "rhs": str(r.rhs),
+            }
+            for r in problema.restricciones
+        ],
+        "objetivo_avanzado": "",
+        "restricciones_avanzado": "",
+    }
+
+
+def _estado_inicial_vacio() -> dict:
+    return {
+        "tipo": "MAX",
+        "objetivo": ["", ""],
+        "restricciones": [
+            {
+                "coeficientes": ["", ""],
+                "signo": "<=",
+                "rhs": "",
+            }
+        ],
+        "objetivo_avanzado": "",
+        "restricciones_avanzado": "",
+    }
+
+
 @ft.component
 def VistaIngreso(controlador: ControladorLineal, navegar_a=None):
-    modo_ingreso_actual, set_modo_ingreso_actual = ft.use_state(0) # 0: Tradicional, 1: Natural, 2: CSV
-    status_text_val, set_status_text_val = ft.use_state(("", "")) # (message, color)
+    modo_ingreso_actual, set_modo_ingreso_actual = ft.use_state(0)  # 0: Tradicional, 1: Natural, 2: CSV
+    status_text_val, set_status_text_val = ft.use_state(("", ""))  # (message, color)
     refresh_trigger, set_refresh_trigger = ft.use_state(0)
 
     # --- REFERENCIA PERSISTENTE ORIENTADA A DATOS NATIVOS ---
     valores_ingreso_ref = ft.use_ref(None)
     if valores_ingreso_ref.current is None:
-        valores_ingreso_ref.current = {
-            "tipo": "MAX",
-            "objetivo": ["", ""], # coeficientes de variables
-            "restricciones": [
-                {
-                    "coeficientes": ["", ""],
-                    "signo": "<=",
-                    "rhs": ""
-                }
-            ],
-            "objetivo_avanzado": "",
-            "restricciones_avanzado": ""
-        }
+        # Poblar desde el problema activo si existe (necesario para clonar desde historial)
+        prob_activo = controlador.problema_activo
+        if prob_activo is not None:
+            valores_ingreso_ref.current = _estado_inicial_desde_problema(prob_activo)
+        else:
+            valores_ingreso_ref.current = _estado_inicial_vacio()
 
     # Handlers para actualizar los datos nativos en tiempo real
     def cambiar_tipo(e: ft.ControlEvent) -> None:
@@ -138,7 +167,7 @@ def VistaIngreso(controlador: ControladorLineal, navegar_a=None):
         valores_ingreso_ref.current["restricciones"].append({
             "coeficientes": [""] * num_vars,
             "signo": "<=",
-            "rhs": ""
+            "rhs": "",
         })
         set_refresh_trigger(lambda x: x + 1)
 
@@ -160,24 +189,12 @@ def VistaIngreso(controlador: ControladorLineal, navegar_a=None):
         else:
             valores_ingreso_ref.current["objetivo_avanzado"] = ""
             valores_ingreso_ref.current["restricciones_avanzado"] = ""
-            
+
         set_status_text_val(("Campos vaciados.", AMBER))
         set_refresh_trigger(lambda x: x + 1)
 
     def manejador_restablecer_todo(_e) -> None:
-        valores_ingreso_ref.current = {
-            "tipo": "MAX",
-            "objetivo": ["", ""],
-            "restricciones": [
-                {
-                    "coeficientes": ["", ""],
-                    "signo": "<=",
-                    "rhs": ""
-                }
-            ],
-            "objetivo_avanzado": "",
-            "restricciones_avanzado": ""
-        }
+        valores_ingreso_ref.current = _estado_inicial_vacio()
         set_status_text_val(("Estructura reseteada por completo.", AMBER))
         set_refresh_trigger(lambda x: x + 1)
 
@@ -248,41 +265,23 @@ def VistaIngreso(controlador: ControladorLineal, navegar_a=None):
             ),
         )
 
-    # Barra modos superior
+    # Selector de modo como Dropdown
     def on_tab_click(index_modo: int) -> None:
         set_modo_ingreso_actual(index_modo)
         set_status_text_val(("", ""))
 
-    barra_modos_superior = ft.Container(
-        content=ft.Row(
-            [
-                ft.Text("Formato de Ingreso:", size=11, color=TEXT_MUTED, weight=ft.FontWeight.W_500),
-                ft.ElevatedButton(
-                    "Tradicional por Celdas",
-                    bgcolor=ACCENT_COLOR if modo_ingreso_actual == 0 else "#374151",
-                    color="white",
-                    on_click=lambda e: on_tab_click(0)
-                ),
-                ft.ElevatedButton(
-                    "Lenguaje Natural (Algebraico)",
-                    bgcolor=ACCENT_COLOR if modo_ingreso_actual == 1 else "#374151",
-                    color="white",
-                    on_click=lambda e: on_tab_click(1)
-                ),
-                ft.ElevatedButton(
-                    "Coeficientes planos (CSV)",
-                    bgcolor=ACCENT_COLOR if modo_ingreso_actual == 2 else "#374151",
-                    color="white",
-                    on_click=lambda e: on_tab_click(2)
-                ),
-            ],
-            spacing=8
-        ),
-        padding=12, border_radius=12, bgcolor=BG_CARD,
-        border=ft.Border(
-            top=ft.BorderSide(1, BORDER_COLOR), bottom=ft.BorderSide(1, BORDER_COLOR),
-            left=ft.BorderSide(1, BORDER_COLOR), right=ft.BorderSide(1, BORDER_COLOR),
-        ),
+    formato_dropdown = ft.Dropdown(
+        value=_MODOS_LABELS[modo_ingreso_actual],
+        options=[ft.dropdown.Option(label) for label in _MODOS_LABELS],
+        width=280,
+        border_color=BORDER_COLOR,
+        focused_border_color=ACCENT_COLOR,
+        bgcolor=BG_FIELD,
+        color=TEXT_PRIMARY,
+        border_radius=8,
+        label="Formato de Ingreso",
+        label_style=ft.TextStyle(color=TEXT_MUTED, size=11),
+        on_select=lambda e: on_tab_click(_MODOS_LABELS.index(e.control.value)),
     )
 
     # Cuerpo central
@@ -335,7 +334,7 @@ def VistaIngreso(controlador: ControladorLineal, navegar_a=None):
                 controles_fila.append(campo_coef)
                 if j < len(fila["coeficientes"]) - 1:
                     controles_fila.append(ft.Text("+", color=TEXT_MUTED, size=12))
-            
+
             signo_dropdown = ft.Dropdown(
                 value=fila["signo"],
                 options=[ft.dropdown.Option("<="), ft.dropdown.Option(">="), ft.dropdown.Option("==")],
@@ -378,7 +377,7 @@ def VistaIngreso(controlador: ControladorLineal, navegar_a=None):
         )
         tarjeta_restricciones = render_bloque_contenedor("Restricciones Lineales", columna_restricciones)
 
-        scrollable_body = ft.Column([tarjeta_fo, tarjeta_restricciones], spacing=16)
+        cuerpo = ft.Column([tarjeta_fo, tarjeta_restricciones], spacing=16)
     else:
         titulo_seccion = "Ingreso en Formato Algebraico Natural" if modo_ingreso_actual == 1 else "Ingreso en Formato Coeficientes CSV"
         label_obj = "Escribe la Función Objetivo" if modo_ingreso_actual == 1 else "Ingresa los Coeficientes Objetivo por comas"
@@ -416,26 +415,33 @@ def VistaIngreso(controlador: ControladorLineal, navegar_a=None):
             on_change=cambiar_restricciones_avanzado,
         )
 
-        tarjeta_avanzada = render_bloque_contenedor(
+        cuerpo = render_bloque_contenedor(
             titulo_seccion,
             ft.Column(
                 [
                     input_objetivo_avanzado,
-                    input_restricciones_avanzado
+                    input_restricciones_avanzado,
                 ],
                 spacing=14,
                 expand=True,
             )
         )
 
-        scrollable_body = tarjeta_avanzada
-
-    cabecera_informativa = ft.Column(
+    # Cabecera con título a la izquierda y formato a la derecha (misma altura)
+    cabecera_row = ft.Row(
         [
-            ft.Text("Configuración del Modelo Lineal", size=20, weight=ft.FontWeight.BOLD, color=TEXT_PRIMARY),
-            ft.Text("Digita los parámetros del problema usando el formato que te sea más cómodo.", size=12, color=TEXT_MUTED),
+            ft.Column(
+                [
+                    ft.Text("Configuración del Modelo Lineal", size=20, weight=ft.FontWeight.BOLD, color=TEXT_PRIMARY),
+                    ft.Text("Digita los parámetros del problema usando el formato que te sea más cómodo.", size=12, color=TEXT_MUTED),
+                ],
+                spacing=2,
+                expand=True,
+            ),
+            formato_dropdown,
         ],
-        spacing=2
+        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+        vertical_alignment=ft.CrossAxisAlignment.CENTER,
     )
 
     barra_botones_inferior = ft.Row(
@@ -454,19 +460,17 @@ def VistaIngreso(controlador: ControladorLineal, navegar_a=None):
         visible=bool(status_text_val[0])
     )
 
-    return ft.Container(
-        content=ft.Column(
-            [
-                barra_modos_superior,
-                cabecera_informativa,
-                ft.Divider(color=BORDER_COLOR, height=1),
-                ft.Column([scrollable_body], scroll=ft.ScrollMode.AUTO, expand=True),
-                ft.Divider(color=BORDER_COLOR, height=1),
-                barra_botones_inferior,
-                status_text_widget,
-            ],
-            spacing=16,
-            expand=True
-        ),
+    # Todo en una columna scrollable (incluye header, cuerpo y botones)
+    return ft.Column(
+        [
+            cabecera_row,
+            ft.Divider(color=BORDER_COLOR, height=1),
+            cuerpo,
+            ft.Divider(color=BORDER_COLOR, height=1),
+            barra_botones_inferior,
+            status_text_widget,
+        ],
+        spacing=16,
         expand=True,
+        scroll=ft.ScrollMode.AUTO,
     )
