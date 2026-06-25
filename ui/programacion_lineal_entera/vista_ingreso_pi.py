@@ -42,6 +42,8 @@ GREEN: str = "#1d9e75"
 AMBER: str = "#f6ad55"
 RED: str = "#ef645f"
 
+_MODOS_LABELS_PI = ["Tradicional por Celdas", "Lenguaje Natural (Algebraico)", "Coeficientes planos (CSV)"]
+
 def _crear_campo_ui(label: str, valor: str = "") -> ft.TextField:
     """Factory function para generar campos de texto estandarizados."""
     return ft.TextField(
@@ -545,41 +547,23 @@ def VistaIngresoPi(controlador: ControladorEntera, navegar_a=None):
             ),
         )
 
-    # Barra modos superior
+    # Selector de modo como Dropdown (igual que PL)
     def on_tab_click(index_modo: int) -> None:
         set_modo_ingreso_actual(index_modo)
         set_refresh_trigger(lambda x: x + 1)
 
-    barra_modos_superior = ft.Container(
-        content=ft.Row(
-            [
-                ft.Text("Formato de Ingreso:", size=11, color=TEXT_MUTED, weight=ft.FontWeight.W_500),
-                ft.ElevatedButton(
-                    "Tradicional por Celdas",
-                    bgcolor=ACCENT_COLOR if modo_ingreso_actual == 0 else "#374151",
-                    color="white",
-                    on_click=lambda e: on_tab_click(0)
-                ),
-                ft.ElevatedButton(
-                    "Lenguaje Natural (Algebraico)",
-                    bgcolor=ACCENT_COLOR if modo_ingreso_actual == 1 else "#374151",
-                    color="white",
-                    on_click=lambda e: on_tab_click(1)
-                ),
-                ft.ElevatedButton(
-                    "Coeficientes planos (CSV)",
-                    bgcolor=ACCENT_COLOR if modo_ingreso_actual == 2 else "#374151",
-                    color="white",
-                    on_click=lambda e: on_tab_click(2)
-                ),
-            ],
-            spacing=8
-        ),
-        padding=12, border_radius=12, bgcolor=BG_CARD,
-        border=ft.Border(
-            top=ft.BorderSide(1, BORDER_COLOR), bottom=ft.BorderSide(1, BORDER_COLOR),
-            left=ft.BorderSide(1, BORDER_COLOR), right=ft.BorderSide(1, BORDER_COLOR),
-        ),
+    formato_dropdown = ft.Dropdown(
+        value=_MODOS_LABELS_PI[modo_ingreso_actual],
+        options=[ft.dropdown.Option(label) for label in _MODOS_LABELS_PI],
+        width=280,
+        border_color=BORDER_COLOR,
+        focused_border_color=ACCENT_COLOR,
+        bgcolor=BG_FIELD,
+        color=TEXT_PRIMARY,
+        border_radius=8,
+        label="Formato de Ingreso",
+        label_style=ft.TextStyle(color=TEXT_MUTED, size=11),
+        on_select=lambda e: on_tab_click(_MODOS_LABELS_PI.index(e.control.value)),
     )
 
     # Construcción de variables binarias y de todas las variables
@@ -748,7 +732,7 @@ def VistaIngresoPi(controlador: ControladorEntera, navegar_a=None):
                     bgcolor=BG_FIELD,
                     color=TEXT_PRIMARY,
                     border_radius=8,
-                    on_change=crear_on_change_prop(idx, "var1"),
+                    on_select=crear_on_change_prop(idx, "var1"),
                 )
 
                 var2_dd = ft.Dropdown(
@@ -760,7 +744,7 @@ def VistaIngresoPi(controlador: ControladorEntera, navegar_a=None):
                     bgcolor=BG_FIELD,
                     color=TEXT_PRIMARY,
                     border_radius=8,
-                    on_change=crear_on_change_prop(idx, "var2"),
+                    on_select=crear_on_change_prop(idx, "var2"),
                 )
 
                 btn_del = ft.IconButton(
@@ -785,7 +769,7 @@ def VistaIngresoPi(controlador: ControladorEntera, navegar_a=None):
                         bgcolor=BG_FIELD,
                         color=TEXT_PRIMARY,
                         border_radius=8,
-                        on_change=crear_on_change_prop(idx, "op"),
+                        on_select=crear_on_change_prop(idx, "op"),
                     )
 
                     logica_pura_rows.append(
@@ -816,7 +800,7 @@ def VistaIngresoPi(controlador: ControladorEntera, navegar_a=None):
                         bgcolor=BG_FIELD,
                         color=TEXT_PRIMARY,
                         border_radius=8,
-                        on_change=crear_on_change_prop(idx, "op"),
+                        on_select=crear_on_change_prop(idx, "op"),
                     )
 
                     m_grande_rows.append(
@@ -846,7 +830,7 @@ def VistaIngresoPi(controlador: ControladorEntera, navegar_a=None):
                         bgcolor=BG_FIELD,
                         color=TEXT_PRIMARY,
                         border_radius=8,
-                        on_change=crear_on_change_prop(idx, "op"),
+                        on_select=crear_on_change_prop(idx, "op"),
                     )
 
                     dest_dd = ft.Dropdown(
@@ -858,7 +842,7 @@ def VistaIngresoPi(controlador: ControladorEntera, navegar_a=None):
                         bgcolor=BG_FIELD,
                         color=TEXT_PRIMARY,
                         border_radius=8,
-                        on_change=crear_on_change_prop(idx, "var_dest"),
+                        on_select=crear_on_change_prop(idx, "var_dest"),
                     )
 
                     asignacion_rows.append(
@@ -882,19 +866,19 @@ def VistaIngresoPi(controlador: ControladorEntera, navegar_a=None):
             col_pura = ft.Column(logica_pura_rows + [
                 ft.Row([
                     _crear_boton_ui("Añadir Relación Lógica Pura", ft.Icons.ADD, lambda _: agregar_relacion_logica("Lógica Pura", "NEGACION")),
-                ], alignment=ft.MainAxisAlignment.END)
+                ], alignment=ft.MainAxisAlignment.START)
             ], spacing=8)
             
             col_mgrande = ft.Column(m_grande_rows + [
                 ft.Row([
                     _crear_boton_ui("Añadir Relación M Grande", ft.Icons.ADD, lambda _: agregar_relacion_logica("Activación Umbral", "ACTIVACION_UMBRAL")),
-                ], alignment=ft.MainAxisAlignment.END)
+                ], alignment=ft.MainAxisAlignment.START)
             ], spacing=8)
             
             col_asignacion = ft.Column(asignacion_rows + [
                 ft.Row([
                     _crear_boton_ui("Añadir Asignación Lógica (Reificación)", ft.Icons.ADD, lambda _: agregar_relacion_logica("Asignación Lógica", "AND_EVAL")),
-                ], alignment=ft.MainAxisAlignment.END)
+                ], alignment=ft.MainAxisAlignment.START)
             ], spacing=8)
 
             tile_pura = ft.ExpansionTile(
@@ -1001,12 +985,21 @@ def VistaIngresoPi(controlador: ControladorEntera, navegar_a=None):
 
         scrollable_body = tarjeta_avanzada
 
-    cabecera_informativa = ft.Column(
+    # Cabecera con título a la izquierda y formato a la derecha (igual que PL)
+    cabecera_row = ft.Row(
         [
-            ft.Text("Configuración del Modelo Entero (PI)", size=20, weight=ft.FontWeight.BOLD, color=TEXT_PRIMARY),
-            ft.Text("Digita los parámetros del problema entero/mixto usando el formato que te sea más cómodo.", size=12, color=TEXT_MUTED),
+            ft.Column(
+                [
+                    ft.Text("Configuración del Modelo Entero (PI)", size=20, weight=ft.FontWeight.BOLD, color=TEXT_PRIMARY),
+                    ft.Text("Digita los parámetros del problema entero/mixto usando el formato que te sea más cómodo.", size=12, color=TEXT_MUTED),
+                ],
+                spacing=2,
+                expand=True,
+            ),
+            formato_dropdown,
         ],
-        spacing=2
+        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+        vertical_alignment=ft.CrossAxisAlignment.CENTER,
     )
 
     barra_botones_inferior = ft.Row(
@@ -1018,18 +1011,15 @@ def VistaIngresoPi(controlador: ControladorEntera, navegar_a=None):
         spacing=8, wrap=True
     )
 
-    return ft.Container(
-        content=ft.Column(
-            [
-                barra_modos_superior,
-                cabecera_informativa,
-                ft.Divider(color=BORDER_COLOR, height=1),
-                ft.Column([scrollable_body], scroll=ft.ScrollMode.AUTO, expand=True),
-                ft.Divider(color=BORDER_COLOR, height=1),
-                barra_botones_inferior,
-            ],
-            spacing=16,
-            expand=True
-        ),
+    return ft.Column(
+        [
+            cabecera_row,
+            ft.Divider(color=BORDER_COLOR, height=1),
+            scrollable_body,
+            ft.Divider(color=BORDER_COLOR, height=1),
+            barra_botones_inferior,
+        ],
+        spacing=16,
         expand=True,
+        scroll=ft.ScrollMode.AUTO,
     )

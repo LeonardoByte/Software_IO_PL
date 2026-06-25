@@ -204,7 +204,24 @@ def _renderizar_paneles_resultados(resultado: RespuestaPlanoCorte, problema: any
 
 @ft.component
 def VistaCortesGomory(controlador: ControladorEntera):
-    problema = controlador.problema_activo
+    resultado_ref = ft.use_ref(None)
+    problema_ref  = ft.use_ref(None)
+
+    problema_actual = controlador.problema_activo
+
+    # Solo resolver si el problema cambió
+    if resultado_ref.current is None or problema_ref.current is not problema_actual:
+        problema_ref.current = problema_actual
+        if problema_actual:
+            try:
+                resultado_ref.current = controlador.resolver_PLE(problema_actual, 2)
+            except Exception:
+                resultado_ref.current = None
+        else:
+            resultado_ref.current = None
+
+    problema = problema_actual
+    resultado = resultado_ref.current
 
     header = ft.Column([
         ft.Text("Cortes de Gomory", size=20, weight=ft.FontWeight.BOLD, color=TEXT_PRIMARY),
@@ -227,10 +244,7 @@ def VistaCortesGomory(controlador: ControladorEntera):
             expand=True, spacing=16, scroll=ft.ScrollMode.AUTO
         )
 
-    # 2. Resolver
-    resultado = controlador.resolver_PLE(problema, 2)
-
-    # 3. Excepción
+    # 2. Excepción
     if resultado is None:
         status_row = _crear_alerta_status("El motor matemático interrumpió el proceso inesperadamente.", RED, ft.Icons.ERROR_OUTLINE)
         error_container = ft.Container(
