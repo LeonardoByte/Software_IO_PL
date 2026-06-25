@@ -5,6 +5,7 @@ sub-controladores matemáticos del ecosistema
 
 from src.controller.controlador_lineal import ControladorLineal
 from src.controller.controlador_entera import ControladorEntera
+from src.controller.controlador_no_lineal import ControladorNoLineal
 
 class ControladorPrincipal:
     """
@@ -12,5 +13,6 @@ class ControladorPrincipal:
     Instancia y expone los sub-controladores especializados.
     """
     def __init__(self) -> None:
-        self.lineal: ControladorLineal = ControladorLineal()
-        self.entera: ControladorEntera = ControladorEntera()
+        self.lineal:     ControladorLineal    = ControladorLineal()
+        self.entera:     ControladorEntera    = ControladorEntera()
+        self.no_lineal:  ControladorNoLineal  = ControladorNoLineal()
