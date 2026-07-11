@@ -1,3 +1,4 @@
+import math
 from fractions import Fraction
 from typing import List, Union, Optional, Dict
 
@@ -73,8 +74,90 @@ class CompiladorLogico:
             rhs=Fraction(1)
         ))
 
-    def _compilar_nodo_recursivo(self, nodo: Union[Restriccion, NodoLogico, str], restricciones: List[Restriccion], 
-                                 tipos_vars: List[TipoVariable], objetivo: List[Numerico]) -> int:
+    def _agregar_reificacion_inversa_restriccion(
+        self, nodo: Restriccion, y: int, restricciones: List[Restriccion],
+        tipos_vars: List[TipoVariable], objetivo: List[Numerico]
+    ) -> None:
+        """
+        Agrega la dirección inversa del Big-M para una Restriccion usada como
+        antecedente de un condicional: además de 'y=1 => se cumple la restricción'
+        (ya agregada por el llamador), fuerza 'se cumple la restricción => y=1'.
+
+        Solo es posible de forma exacta cuando todas las variables con coeficiente
+        no nulo son ENTERA/BINARIA: el valor de a^T X queda entonces confinado a una
+        red de puntos espaciados 1/D (D = mcm de los denominadores de los coeficientes
+        involucrados), lo que permite expresar 'a^T X > b' exactamente como
+        'a^T X >= b_siguiente_punto_de_red', sin ninguna tolerancia arbitraria.
+        """
+        a_orig = [Fraction(c) for c in nodo.coeficientes]
+        involucradas = [idx for idx, c in enumerate(a_orig) if c != 0]
+
+        if not involucradas:
+            return
+
+        if any(tipos_vars[idx] == TipoVariable.CONTINUA for idx in involucradas):
+            raise ValueError(
+                "No es posible reificar de forma exacta una restricción con variables "
+                "CONTINUA como antecedente de un condicional (SI...ENTONCES): no existe "
+                "una cota exacta para 'a·x > b' en el dominio de los reales. Reformule "
+                "el antecedente usando variables ENTERA/BINARIA, o una expresión lógica "
+                "entre variables binarias."
+            )
+
+        D = math.lcm(*[a_orig[idx].denominator for idx in involucradas])
+        b = Fraction(nodo.rhs)
+
+        a = list(a_orig) + [Fraction(0)] * (len(tipos_vars) - len(a_orig))
+
+        if nodo.signo == SignoRestriccion.MENOR_IGUAL:
+            # ¬(a·x <= b) <=> a·x >= t, con t el siguiente punto de la red tras b
+            t = Fraction(math.floor(b * D) + 1, D)
+            coefs_rev = list(a)
+            coefs_rev[y] = self.M
+            restricciones.append(Restriccion(coefs_rev, SignoRestriccion.MAYOR_IGUAL, t))
+
+        elif nodo.signo == SignoRestriccion.MAYOR_IGUAL:
+            # ¬(a·x >= b) <=> a·x <= s, con s el punto de la red anterior a b
+            s = Fraction(math.ceil(b * D) - 1, D)
+            coefs_rev = list(a)
+            coefs_rev[y] = -self.M
+            restricciones.append(Restriccion(coefs_rev, SignoRestriccion.MENOR_IGUAL, s))
+
+        elif nodo.signo == SignoRestriccion.IGUAL:
+            # ¬(a·x == b) <=> a·x <= s OR a·x >= t (disyunción: variable binaria z elige la rama)
+            t = Fraction(math.floor(b * D) + 1, D)
+            s = Fraction(math.ceil(b * D) - 1, D)
+
+            z = len(tipos_vars)
+            tipos_vars.append(TipoVariable.BINARIA)
+            objetivo.append(Fraction(0))
+            self.artificial_vars[f"a_{len(self.artificial_vars) + 1}"] = z
+
+            a_z = a + [Fraction(0)] * (len(tipos_vars) - len(a))
+
+            # Rama z=1: a·x - M*z + M*y >= t - M  (activa solo si y=0 y z=1)
+            coefs_A = list(a_z)
+            coefs_A[z] = -self.M
+            coefs_A[y] = self.M
+            restricciones.append(Restriccion(coefs_A, SignoRestriccion.MAYOR_IGUAL, t - self.M))
+
+            # Rama z=0: a·x - M*z - M*y <= s  (activa solo si y=0 y z=0)
+            coefs_B = list(a_z)
+            coefs_B[z] = -self.M
+            coefs_B[y] = -self.M
+            restricciones.append(Restriccion(coefs_B, SignoRestriccion.MENOR_IGUAL, s))
+
+    def _compilar_nodo_recursivo(self, nodo: Union[Restriccion, NodoLogico, str], restricciones: List[Restriccion],
+                                 tipos_vars: List[TipoVariable], objetivo: List[Numerico],
+                                 reificar_completo: bool = False) -> int:
+        """
+        reificar_completo=True exige que la variable de control 'y' de este nodo sea
+        un indicador verdadero (y == 1 si y solo si se cumple la condición), agregando
+        la dirección inversa del Big-M además de la directa. Solo se activa para el
+        antecedente (hijos[0]) de un SI...ENTONCES/IMPLICACION: en cualquier otro
+        contexto (raíz, consecuente, u operadores ya biconstruidos como CONJUNCION/
+        DISYUNCION) la dirección directa es suficiente y este parámetro se ignora.
+        """
         if isinstance(nodo, str):
             if nodo.startswith("x") and nodo[1:].isdigit():
                 return int(nodo[1:]) - 1
@@ -153,8 +236,12 @@ class CompiladorLogico:
                     signo=SignoRestriccion.MENOR_IGUAL,
                     rhs=self.M - Fraction(nodo.rhs)
                 ))
+
+            if reificar_completo:
+                self._agregar_reificacion_inversa_restriccion(nodo, y, restricciones, tipos_vars, objetivo)
+
             return y
-        
+
         elif isinstance(nodo, NodoLogico):
             # 2. Caso especial: ACTIVACION_UMBRAL (Costo fijo o activación)
             if nodo.operador == OperadorMGrande.ACTIVACION_UMBRAL:
@@ -220,12 +307,19 @@ class CompiladorLogico:
                 art_name = f"a_{len(self.artificial_vars) + 1}"
                 self.artificial_vars[art_name] = y
 
-            # Procesar hijos recursivamente para obtener sus índices de variables de control
+            # Procesar hijos recursivamente para obtener sus índices de variables de control.
+            # El antecedente (hijos[0]) de un condicional necesita ser un indicador
+            # verdadero (ver reificar_completo) para que la implicación no quede vacía
+            # cuando el solver pueda dejarlo en 0 aunque la condición se cumpla de hecho.
+            es_condicional = nodo.operador in (OperadorLogico.IMPLICACION, OperadorMGrande.CONDICIONAL_COMPUESTO)
             child_vars = [
-                self._compilar_nodo_recursivo(hijo, restricciones, tipos_vars, objetivo)
-                for hijo in nodo.hijos
+                self._compilar_nodo_recursivo(
+                    hijo, restricciones, tipos_vars, objetivo,
+                    reificar_completo=(es_condicional and i == 0)
+                )
+                for i, hijo in enumerate(nodo.hijos)
             ]
-            
+
             op = nodo.operador
             
             if op == OperadorLogico.NEGACION:
@@ -239,7 +333,14 @@ class CompiladorLogico:
                     signo=SignoRestriccion.MENOR_IGUAL,
                     rhs=Fraction(1) + self.M
                 ))
-                
+                if reificar_completo:
+                    # Inversa exacta (binarios): w1 + w2 <= 1 => y=1, contrapositivo y=0 => w1+w2>=2
+                    coefs_rev = [Fraction(0)] * len(tipos_vars)
+                    coefs_rev[child_vars[0]] = Fraction(1)
+                    coefs_rev[child_vars[1]] = Fraction(1)
+                    coefs_rev[y] = Fraction(2)
+                    restricciones.append(Restriccion(coefs_rev, SignoRestriccion.MAYOR_IGUAL, Fraction(2)))
+
             elif op in (OperadorLogico.CONJUNCION, OperadorMGrande.CONJUNCION_RESTRICCIONES):
                 # y <= w_r => y - w_r <= 0
                 for w in child_vars:
@@ -286,17 +387,30 @@ class CompiladorLogico:
                 ))
                 
             elif op in (OperadorLogico.EXCLUSION_MUTUA, OperadorMGrande.VALORES_DISJUNTOS):
-                # sum(w_r) = y
-                coefs = [Fraction(0)] * len(tipos_vars)
-                coefs[y] = Fraction(-1)
+                # y=1 => sum(w_r) = 1 (exactamente uno); y=0 => bloque totalmente relajado.
+                # (Una igualdad incondicional 'sum(w_r) = y' forzaría "a lo sumo uno"
+                # siempre, incluso anidado con y=0, sobre-restringiendo el modelo.)
+                # (a) sum(w_r) + M*y <= 1 + M
+                coefs_le = [Fraction(0)] * len(tipos_vars)
+                coefs_le[y] = self.M
                 for w in child_vars:
-                    coefs[w] = Fraction(1)
+                    coefs_le[w] = Fraction(1)
                 restricciones.append(Restriccion(
-                    coeficientes=coefs,
-                    signo=SignoRestriccion.IGUAL,
-                    rhs=Fraction(0)
+                    coeficientes=coefs_le,
+                    signo=SignoRestriccion.MENOR_IGUAL,
+                    rhs=Fraction(1) + self.M
                 ))
-                
+                # (b) sum(w_r) - M*y >= 1 - M
+                coefs_ge = [Fraction(0)] * len(tipos_vars)
+                coefs_ge[y] = self.M
+                for w in child_vars:
+                    coefs_ge[w] = Fraction(-1)
+                restricciones.append(Restriccion(
+                    coeficientes=coefs_ge,
+                    signo=SignoRestriccion.MENOR_IGUAL,
+                    rhs=self.M - Fraction(1)
+                ))
+
             elif op in (OperadorLogico.IMPLICACION, OperadorMGrande.CONDICIONAL_COMPUESTO):
                 # child_vars[0] => child_vars[1]
                 # w1 - w2 + y <= 1
@@ -309,7 +423,14 @@ class CompiladorLogico:
                     signo=SignoRestriccion.MENOR_IGUAL,
                     rhs=Fraction(1)
                 ))
-                
+                if reificar_completo:
+                    # Inversa exacta (binarios): w1<=w2 => y=1, contrapositivo y=0 => w1-w2>=1
+                    coefs_rev = [Fraction(0)] * len(tipos_vars)
+                    coefs_rev[child_vars[0]] = Fraction(1)
+                    coefs_rev[child_vars[1]] = Fraction(-1)
+                    coefs_rev[y] = Fraction(2)
+                    restricciones.append(Restriccion(coefs_rev, SignoRestriccion.MAYOR_IGUAL, Fraction(1)))
+
             elif op == OperadorLogico.EQUIVALENCIA:
                 # w1 <=> w2
                 # w1 - w2 + y <= 1
@@ -332,7 +453,21 @@ class CompiladorLogico:
                     signo=SignoRestriccion.MENOR_IGUAL,
                     rhs=Fraction(1)
                 ))
-                
+                if reificar_completo:
+                    # Inversa exacta (binarios): w1=w2 => y=1, contrapositivo y=0 => w1+w2=1
+                    # (a) w1 + w2 - y <= 1
+                    coefs_a = [Fraction(0)] * len(tipos_vars)
+                    coefs_a[child_vars[0]] = Fraction(1)
+                    coefs_a[child_vars[1]] = Fraction(1)
+                    coefs_a[y] = Fraction(-1)
+                    restricciones.append(Restriccion(coefs_a, SignoRestriccion.MENOR_IGUAL, Fraction(1)))
+                    # (b) w1 + w2 + y >= 1
+                    coefs_b = [Fraction(0)] * len(tipos_vars)
+                    coefs_b[child_vars[0]] = Fraction(1)
+                    coefs_b[child_vars[1]] = Fraction(1)
+                    coefs_b[y] = Fraction(1)
+                    restricciones.append(Restriccion(coefs_b, SignoRestriccion.MAYOR_IGUAL, Fraction(1)))
+
             elif op == OperadorMGrande.SELECCION_K_DE_N:
                 K = int(nodo.variable_control_asociada) if nodo.variable_control_asociada is not None else 1
                 # sum(w_r) + M * y <= K + M

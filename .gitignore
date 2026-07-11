@@ -5,3 +5,7 @@ __pycache__/
 *.pyc
 
 tests/
+
+.codegraph/
+.claude/
+CLAUDE.md

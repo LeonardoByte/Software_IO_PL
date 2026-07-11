@@ -1,6 +1,6 @@
 # src/models/entity/programacion_lineal_entera/respuesta.py
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from fractions import Fraction
 from typing import List, Optional, Union
 from src.models.entity.programacion_lineal.enums import EstadoProblema
@@ -51,6 +51,9 @@ class RespuestaPlanoCorte:
     variables_decision: Optional[List[NumericoTabular]]
     # Recicla tu estructura exacta: cada iteración puede ser un tableau normal o uno con una fila de corte
     iteraciones: List[IteracionTabular]
+    # Cuántas entradas de 'iteraciones' aporta cada corte (en orden), para que la UI
+    # pueda paginar por corte sin tener que renderizar todos los tableaus de una vez.
+    iteraciones_por_corte: List[int] = field(default_factory=list)
 
 
 # Método de Enumeración Implícita (Balas)

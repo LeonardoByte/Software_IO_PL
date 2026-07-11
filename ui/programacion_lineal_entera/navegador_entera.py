@@ -25,25 +25,20 @@ def NavegadorEntera(controlador: ControladorEntera):
     def show_view(index: int) -> None:
         set_selected_index(index)
 
-    # Cache de VistaIngresoPi para conservar los campos editados
-    vista_ingreso_ref = ft.use_ref(None)
-    if vista_ingreso_ref.current is None:
-        vista_ingreso_ref.current = VistaIngresoPi(controlador, show_view)
-
     def on_nav_change(e: ft.ControlEvent) -> None:
         nav_rail = e.control
-        indice = int(nav_rail.selected_index) 
+        indice = int(nav_rail.selected_index)
         show_view(indice)
 
     def create_view(index: int) -> ft.Control:
         match index:
-            case 0: return vista_ingreso_ref.current
+            case 0: return VistaIngresoPi(controlador, show_view)
             case 1: return VistaHistorialPi(controlador, show_view)
             case 2: return VistaBranchBound(controlador)
             case 3: return VistaCortesGomory(controlador)
             case 4: return VistaEnumeracionBalas(controlador)
             # Fallback en caso de que vuelva a cargar vista ingreso
-            case _: return vista_ingreso_ref.current
+            case _: return VistaIngresoPi(controlador, show_view)
 
     destinations = [
         ft.NavigationRailDestination(icon=ft.Icons.EDIT_NOTE, label="Ingresar PI"),

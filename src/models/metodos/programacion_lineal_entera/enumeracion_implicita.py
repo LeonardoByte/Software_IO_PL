@@ -45,12 +45,6 @@ class SolucionadorEnumeracionImplicita:
         
         # Coeficientes objetivo ajustados para Y: c_prime >= 0
         c_prime = [-C[j] if substituted[j] else C[j] for j in range(n)]
-        
-        # Constante sumada a la función objetivo de Y para obtener el valor original
-        # min Z_X = sum(C_j * X_j) = sum_{not sub} C_j * Y_j + sum_{sub} C_j * (1 - Y_j)
-        #          = sum_{not sub} C_j * Y_j - sum_{sub} C_j * Y_j + sum_{sub} C_j
-        #          = sum(c_prime_j * Y_j) + const_obj
-        const_obj = sum(C[j] for j in range(n) if substituted[j])
 
         # 3. Estandarizar restricciones a la forma sum(a_prime_ij * Y_j) >= b_prime_i
         a_balas: List[List[Fraction]] = []
@@ -235,6 +229,17 @@ class SolucionadorEnumeracionImplicita:
 
         # 5. Formular respuesta final
         if best_Y is None:
+            # Si se agotó el presupuesto de pasos sin explorar todo el árbol, no se
+            # puede afirmar que el problema sea inviable: solo que no se alcanzó a
+            # encontrar (ni descartar) ninguna solución factible a tiempo.
+            if steps_count >= self.MAX_STEPS:
+                return RespuestaEnumeracionImplicita(
+                    estado=EstadoProblema.LIMITE_ITERACIONES,
+                    mensaje="Se alcanzó el límite de pasos sin encontrar una solución factible.",
+                    z_optimo=None,
+                    variables_decision=None,
+                    pasos=pasos
+                )
             return RespuestaEnumeracionImplicita(
                 estado=EstadoProblema.INVIABLE,
                 mensaje=EstadoProblema.INVIABLE.value,

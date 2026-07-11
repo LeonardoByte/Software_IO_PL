@@ -23,6 +23,9 @@ Ejemplo de Ingreso:
   MAX Z = 50x1 + 80x2 + 30x3
   x1=C x2=E x3=B
 
+⚠️ NOTA: Las tres categorías (C, E, B) asumen siempre x >= 0. No existe forma
+de modelar una variable continua o entera libre/negativa.
+
 --------------------------------------------------------------------------------
 SECCIÓN 2: RESTRICCIONES LÓGICAS PURAS (OperadorLogico)
 --------------------------------------------------------------------------------
@@ -70,7 +73,8 @@ asumirá automáticamente 'x3 = 1'. Para variables C o E, se exige la ecuación 
    * Exige que al menos una de las inecuaciones se cumpla de forma estricta.
 
 3. SELECCION_K_DE_N -> Sintaxis: CUMPLIR K DE [ (Ecuación1), ..., (EcuaciónN) ]
-   * Obliga a que se cumpla un número exacto 'K' de restricciones del paquete.
+   * Obliga a que se cumplan AL MENOS 'K' restricciones del paquete (las N-K
+     restantes quedan libres, pero podrían cumplirse igual por su cuenta).
 
 4. ACTIVACION_UMBRAL -> Sintaxis: x1 ACTIVADO_POR x2
    * Vincula una variable continua/entera (x1) a una binaria (x2). 

@@ -245,10 +245,30 @@ def _leyenda() -> ft.Container:
         ),
     )
 
+# Renderizar cada nodo del árbol produce varios controles Flet anidados (tarjeta +
+# conectores). Para modelos con muchas variables enteras/binarias y poda débil, el
+# árbol de Branch & Bound puede crecer a miles de nodos: intentar dibujarlos todos
+# genera decenas de miles de controles anidados centrados dentro de una fila con
+# scroll, lo que hace que el layout del cliente se congele al montar/desmontar la
+# vista. Por eso se limita la cantidad de nodos que se dibujan visualmente.
+MAX_NODOS_ARBOL_VISUAL = 150
+
 def _renderizar_arbol(resultado: RespuestaBranchAndBound, num_original_vars: int, problema: any) -> list[ft.Control]:
     controles: list[ft.Control] = [
         _tarjeta_resumen(resultado, num_original_vars, problema),
     ]
+
+    total_nodos = len(resultado.arbol_nodos)
+    if total_nodos > MAX_NODOS_ARBOL_VISUAL:
+        controles.append(
+            _crear_alerta_status(
+                f"El árbol de exploración tiene {total_nodos} nodos: es demasiado grande para "
+                f"dibujarse completo. Se muestra únicamente el resumen del resultado.",
+                AMBER,
+                ft.Icons.WARNING_AMBER,
+            )
+        )
+        return controles
 
     nodos_por_id = {nodo.id_nodo: nodo for nodo in resultado.arbol_nodos}
     hijos_por_padre: dict[int, list[NodoBranchAndBound]] = {}

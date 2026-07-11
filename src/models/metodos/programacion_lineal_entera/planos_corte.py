@@ -25,13 +25,30 @@ class SolucionadorPlanosCorte:
     def resolver(self, problema: ProblemaPLE) -> RespuestaPlanoCorte:
         # Convertir todo el problema a fracciones para evitar errores de precisión y usar solvers tabulares
         problema_frac = self._convertir_a_fracciones(problema)
-        
+
         # Problema activo que irá creciendo con las restricciones de corte
         restricciones_actuales = list(problema_frac.restricciones)
-        
-        iteraciones_totales: List[IteracionTabular] = []
+
         n_vars = problema_frac.total_variables
         tipos_variables = problema_frac.tipos_variables
+
+        # Las variables BINARIA necesitan su cota superior X_j <= 1 explícita: a
+        # diferencia de Branch and Bound (que la aplica vía variable shifting), este
+        # solver nunca la inyectaría por sí solo, y la detección de "fraccionario"
+        # (más abajo) solo dispara sobre valores no enteros — un valor entero fuera
+        # de {0,1} (ej. X_j=3) pasaría inadvertido como "óptimo entero" válido.
+        for j, tipo in enumerate(tipos_variables):
+            if tipo == TipoVariable.BINARIA:
+                coefs_cota = [Fraction(0)] * n_vars
+                coefs_cota[j] = Fraction(1)
+                restricciones_actuales.append(Restriccion(
+                    coeficientes=coefs_cota,
+                    signo=SignoRestriccion.MENOR_IGUAL,
+                    rhs=Fraction(1)
+                ))
+
+        iteraciones_totales: List[IteracionTabular] = []
+        iteraciones_por_corte: List[int] = []
 
         for corte_idx in range(self.MAX_CORTES):
             # Construir problema actual
@@ -43,13 +60,21 @@ class SolucionadorPlanosCorte:
 
             # Elegir solver tabular adecuado
             solver = self._elegir_solver(problema_actual)
-            
+
             # Resolver
             res_tabular = solver.resolver(problema_actual)
-            
+
+            # SolucionadorSimplex exige forma canónica (solo '<=' y RHS >= 0). Si el
+            # problema tiene RHS negativo en alguna restricción original, Simplex
+            # reporta REQUIERE_OTRO_METODO en vez de intentar resolverlo: reintentar
+            # con Dos Fases, que sí normaliza RHS negativo internamente.
+            if res_tabular.estado == EstadoProblema.REQUIERE_OTRO_METODO and not isinstance(solver, SolucionadorDosFases):
+                res_tabular = SolucionadorDosFases().resolver(problema_actual)
+
             # Guardar iteraciones
             if res_tabular.iteraciones:
                 iteraciones_totales.extend(res_tabular.iteraciones)
+                iteraciones_por_corte.append(len(res_tabular.iteraciones))
 
             # Si no es óptimo, el problema no tiene solución entera viable
             if res_tabular.estado != EstadoProblema.OPTIMO:
@@ -58,7 +83,8 @@ class SolucionadorPlanosCorte:
                     mensaje=res_tabular.estado.value,
                     z_optimo=None,
                     variables_decision=None,
-                    iteraciones=iteraciones_totales
+                    iteraciones=iteraciones_totales,
+                    iteraciones_por_corte=iteraciones_por_corte
                 )
 
             z_optimo = res_tabular.z_optimo
@@ -69,7 +95,8 @@ class SolucionadorPlanosCorte:
                     mensaje="Error en la solución",
                     z_optimo=None,
                     variables_decision=None,
-                    iteraciones=iteraciones_totales
+                    iteraciones=iteraciones_totales,
+                    iteraciones_por_corte=iteraciones_por_corte
                 )
 
             # Buscar variables enteras/binarias que tengan valor fraccionario
@@ -88,7 +115,8 @@ class SolucionadorPlanosCorte:
                     mensaje=EstadoProblema.OPTIMO.value,
                     z_optimo=z_optimo,
                     variables_decision=variables_decision,
-                    iteraciones=iteraciones_totales
+                    iteraciones=iteraciones_totales,
+                    iteraciones_por_corte=iteraciones_por_corte
                 )
 
             # Seleccionar la variable fraccionaria con la parte fraccionaria más cercana a 0.5 (heurística estándar)
@@ -115,7 +143,8 @@ class SolucionadorPlanosCorte:
                     mensaje="Error interno: No se encontró la variable básica en el tableau.",
                     z_optimo=None,
                     variables_decision=None,
-                    iteraciones=iteraciones_totales
+                    iteraciones=iteraciones_totales,
+                    iteraciones_por_corte=iteraciones_por_corte
                 )
 
             # Generar el corte de Gomory a partir de la fila row_idx
@@ -172,7 +201,8 @@ class SolucionadorPlanosCorte:
             mensaje="Se alcanzó el límite de cortes de Gomory sin converger a una solución entera.",
             z_optimo=None,
             variables_decision=None,
-            iteraciones=iteraciones_totales
+            iteraciones=iteraciones_totales,
+            iteraciones_por_corte=iteraciones_por_corte
         )
 
     def _convertir_a_fracciones(self, problema: ProblemaPLE) -> ProblemaPLE:

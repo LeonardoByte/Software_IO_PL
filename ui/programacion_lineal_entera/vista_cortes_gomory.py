@@ -134,78 +134,144 @@ def _crear_tabla_visual(iteracion: IteracionTabular) -> ft.Control:
         border=ft.Border(top=ft.BorderSide(1, BORDER_COLOR), bottom=ft.BorderSide(1, BORDER_COLOR), left=ft.BorderSide(1, BORDER_COLOR), right=ft.BorderSide(1, BORDER_COLOR)),
     )
 
-def _renderizar_paneles_resultados(resultado: RespuestaPlanoCorte, problema: any) -> List[ft.Control]:
+# Límite duro de tablas construidas en un solo render, incluso dentro de una
+# única página/corte: un corte patológico con cientos de pasos de pivoteo no
+# debe poder congelar la vista por sí solo.
+MAX_TABLAS_POR_PAGINA: int = 30
+
+def _calcular_paginas(resultado: RespuestaPlanoCorte) -> List[List[IteracionTabular]]:
+    """
+    Agrupa las iteraciones planas de la respuesta en una lista de páginas,
+    una por corte de Gomory (o por la relajación inicial, en la página 0).
+    """
+    if not resultado.iteraciones:
+        return []
+    if not resultado.iteraciones_por_corte or sum(resultado.iteraciones_por_corte) != len(resultado.iteraciones):
+        # Respaldo defensivo si el conteo por corte no está disponible o no cuadra:
+        # tratar todo como una sola página en vez de fallar.
+        return [resultado.iteraciones]
+
+    paginas: List[List[IteracionTabular]] = []
+    cursor = 0
+    for cantidad in resultado.iteraciones_por_corte:
+        paginas.append(resultado.iteraciones[cursor:cursor + cantidad])
+        cursor += cantidad
+    return paginas
+
+def _renderizar_pagina(pagina: List[IteracionTabular], indice_pagina: int, offset_paso: int) -> List[ft.Control]:
     controles: List[ft.Control] = []
 
+    mostrar = pagina
+    truncado = len(pagina) > MAX_TABLAS_POR_PAGINA
+    if truncado:
+        mitad = MAX_TABLAS_POR_PAGINA // 2
+        mostrar = pagina[:mitad]
+
+    for offset, iteracion in enumerate(mostrar):
+        idx = offset_paso + offset + 1
+        controles.append(_renderizar_tarjeta_paso(iteracion, idx))
+
+    if truncado:
+        n_omitidos = len(pagina) - MAX_TABLAS_POR_PAGINA
+        controles.append(
+            _crear_alerta_status(
+                f"{n_omitidos} pasos intermedios omitidos en este corte para mantener la vista responsiva.",
+                AMBER, ft.Icons.MORE_HORIZ
+            )
+        )
+        for offset, iteracion in enumerate(pagina[-(MAX_TABLAS_POR_PAGINA - mitad):]):
+            idx = offset_paso + (len(pagina) - (MAX_TABLAS_POR_PAGINA - mitad)) + offset + 1
+            controles.append(_renderizar_tarjeta_paso(iteracion, idx))
+
+    return controles
+
+def _renderizar_tarjeta_paso(iteracion: IteracionTabular, idx: int) -> ft.Control:
+    fase_num = iteracion.fase
+    msg_iter = iteracion.mensaje
+
+    componentes_titulo = [ft.Text(f"Paso {idx}", size=14, weight=ft.FontWeight.W_600, color=TEXT_PRIMARY)]
+    if fase_num is not None:
+        color_fase = "#1d9e75" if fase_num == 1 else "#2563eb"
+        componentes_titulo.append(
+            ft.Container(
+                content=ft.Text(f"Fase {fase_num}", size=10, color="white", weight=ft.FontWeight.W_600),
+                padding=8, bgcolor=color_fase, border_radius=99,
+            )
+        )
+
+    return ft.Container(
+        content=ft.Column([
+            ft.Row(componentes_titulo, spacing=8),
+            ft.Text(msg_iter, size=12, color=TEXT_MUTED) if msg_iter else ft.Container(),
+            _crear_tabla_visual(iteracion),
+        ], spacing=10),
+        padding=16, border_radius=12, bgcolor=BG_CARD,
+        border=ft.Border(top=ft.BorderSide(1, BORDER_COLOR), bottom=ft.BorderSide(1, BORDER_COLOR), left=ft.BorderSide(1, BORDER_COLOR), right=ft.BorderSide(1, BORDER_COLOR)),
+    )
+
+def _renderizar_resumen(resultado: RespuestaPlanoCorte, problema: any) -> ft.Control:
     fo_str = _formatear_funcion_objetivo_ui(problema.tipo, problema.objetivo)
-    
+
     # Mostrar solo variables originales
     variables_originales = (resultado.variables_decision or [])[:len(problema.objetivo)]
     z_val = AnalizadorMatematico.formatear_valor_pedagogico(resultado.z_optimo) if resultado.z_optimo is not None else "N/D"
     texto_vars = ", ".join(f"X{i+1} = {AnalizadorMatematico.formatear_valor_pedagogico(v)}" for i, v in enumerate(variables_originales)) if variables_originales else "N/D"
 
-    controles.append(
-        ft.Container(
-            content=ft.Column([
-                ft.Text(fo_str, size=14, color=TEXT_PRIMARY, weight=ft.FontWeight.W_600, selectable=True),
-                ft.Row([
-                    ft.Container(
-                        content=ft.Column([
-                            ft.Text("Z óptimo (Gomory)", size=10, color=TEXT_MUTED),
-                            ft.Text(z_val, size=18, color=GREEN, weight=ft.FontWeight.BOLD),
-                        ], spacing=2),
-                        padding=16, border_radius=8, bgcolor="#1e2130", border=ft.Border(top=ft.BorderSide(1, BORDER_COLOR), bottom=ft.BorderSide(1, BORDER_COLOR), left=ft.BorderSide(1, BORDER_COLOR), right=ft.BorderSide(1, BORDER_COLOR)),
-                    ),
-                    ft.Container(
-                        content=ft.Column([
-                            ft.Text("Variables Enteras óptimas", size=10, color=TEXT_MUTED),
-                            ft.Text(texto_vars, size=13, color=TEXT_PRIMARY),
-                        ], spacing=2),
-                        padding=16, border_radius=8, bgcolor="#1e2130", border=ft.Border(top=ft.BorderSide(1, BORDER_COLOR), bottom=ft.BorderSide(1, BORDER_COLOR), left=ft.BorderSide(1, BORDER_COLOR), right=ft.BorderSide(1, BORDER_COLOR)),
-                    ),
-                ], spacing=8, wrap=True),
-                ft.Text(f"Estado de parada: {resultado.estado.value}", size=11, color=TEXT_MUTED, italic=True),
-            ], spacing=10),
-            padding=16, border_radius=12, bgcolor=BG_CARD,
-            border=ft.Border(top=ft.BorderSide(1, ACCENT_COLOR + "66"), bottom=ft.BorderSide(1, ACCENT_COLOR + "66"), left=ft.BorderSide(1, ACCENT_COLOR + "66"), right=ft.BorderSide(1, ACCENT_COLOR + "66")),
-        )
+    return ft.Container(
+        content=ft.Column([
+            ft.Text(fo_str, size=14, color=TEXT_PRIMARY, weight=ft.FontWeight.W_600, selectable=True),
+            ft.Row([
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("Z óptimo (Gomory)", size=10, color=TEXT_MUTED),
+                        ft.Text(z_val, size=18, color=GREEN, weight=ft.FontWeight.BOLD),
+                    ], spacing=2),
+                    padding=16, border_radius=8, bgcolor="#1e2130", border=ft.Border(top=ft.BorderSide(1, BORDER_COLOR), bottom=ft.BorderSide(1, BORDER_COLOR), left=ft.BorderSide(1, BORDER_COLOR), right=ft.BorderSide(1, BORDER_COLOR)),
+                ),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("Variables Enteras óptimas", size=10, color=TEXT_MUTED),
+                        ft.Text(texto_vars, size=13, color=TEXT_PRIMARY),
+                    ], spacing=2),
+                    padding=16, border_radius=8, bgcolor="#1e2130", border=ft.Border(top=ft.BorderSide(1, BORDER_COLOR), bottom=ft.BorderSide(1, BORDER_COLOR), left=ft.BorderSide(1, BORDER_COLOR), right=ft.BorderSide(1, BORDER_COLOR)),
+                ),
+            ], spacing=8, wrap=True),
+            ft.Text(f"Estado de parada: {resultado.estado.value}", size=11, color=TEXT_MUTED, italic=True),
+        ], spacing=10),
+        padding=16, border_radius=12, bgcolor=BG_CARD,
+        border=ft.Border(top=ft.BorderSide(1, ACCENT_COLOR + "66"), bottom=ft.BorderSide(1, ACCENT_COLOR + "66"), left=ft.BorderSide(1, ACCENT_COLOR + "66"), right=ft.BorderSide(1, ACCENT_COLOR + "66")),
     )
 
-    if not resultado.iteraciones:
-        return controles
+def _crear_boton_paginacion(icono: ft.Icons, on_click, deshabilitado: bool) -> ft.IconButton:
+    return ft.IconButton(
+        icon=icono, icon_color=TEXT_PRIMARY if not deshabilitado else TEXT_MUTED,
+        disabled=deshabilitado, on_click=on_click, icon_size=20,
+    )
 
-    for idx, iteracion in enumerate(resultado.iteraciones, start=1):
-        fase_num = iteracion.fase
-        msg_iter = iteracion.mensaje
-
-        componentes_titulo = [ft.Text(f"Paso {idx}", size=14, weight=ft.FontWeight.W_600, color=TEXT_PRIMARY)]
-        if fase_num is not None:
-            color_fase = "#1d9e75" if fase_num == 1 else "#2563eb"
-            componentes_titulo.append(
-                ft.Container(
-                    content=ft.Text(f"Fase {fase_num}", size=10, color="white", weight=ft.FontWeight.W_600),
-                    padding=8, bgcolor=color_fase, border_radius=99,
-                )
-            )
-
-        controles.append(
+def _renderizar_controles_paginacion(indice_pagina: int, total_paginas: int, ir_a: "any") -> ft.Row:
+    etiqueta = "Relajación inicial" if indice_pagina == 0 else f"Corte {indice_pagina}"
+    return ft.Row(
+        [
+            _crear_boton_paginacion(ft.Icons.FIRST_PAGE, lambda _: ir_a(0), indice_pagina == 0),
+            _crear_boton_paginacion(ft.Icons.CHEVRON_LEFT, lambda _: ir_a(indice_pagina - 1), indice_pagina == 0),
             ft.Container(
-                content=ft.Column([
-                    ft.Row(componentes_titulo, spacing=8),
-                    ft.Text(msg_iter, size=12, color=TEXT_MUTED) if msg_iter else ft.Container(),
-                    _crear_tabla_visual(iteracion),
-                ], spacing=10),
-                padding=16, border_radius=12, bgcolor=BG_CARD,
-                border=ft.Border(top=ft.BorderSide(1, BORDER_COLOR), bottom=ft.BorderSide(1, BORDER_COLOR), left=ft.BorderSide(1, BORDER_COLOR), right=ft.BorderSide(1, BORDER_COLOR)),
-            )
-        )
-
-    return controles
+                content=ft.Text(
+                    f"{etiqueta}  •  Página {indice_pagina + 1} de {total_paginas}",
+                    size=12, color=TEXT_PRIMARY, weight=ft.FontWeight.W_600
+                ),
+                padding=ft.Padding(12, 6, 12, 6), border_radius=8, bgcolor="#1e2130",
+            ),
+            _crear_boton_paginacion(ft.Icons.CHEVRON_RIGHT, lambda _: ir_a(indice_pagina + 1), indice_pagina >= total_paginas - 1),
+            _crear_boton_paginacion(ft.Icons.LAST_PAGE, lambda _: ir_a(total_paginas - 1), indice_pagina >= total_paginas - 1),
+        ],
+        spacing=4, alignment=ft.MainAxisAlignment.CENTER,
+    )
 
 @ft.component
 def VistaCortesGomory(controlador: ControladorEntera):
     resultado_ref = ft.use_ref(None)
     problema_ref  = ft.use_ref(None)
+    pagina_actual, set_pagina_actual = ft.use_state(0)
 
     problema_actual = controlador.problema_activo
 
@@ -219,6 +285,10 @@ def VistaCortesGomory(controlador: ControladorEntera):
                 resultado_ref.current = None
         else:
             resultado_ref.current = None
+        # Nuevo problema/resultado: volver siempre a la primera página.
+        if pagina_actual != 0:
+            pagina_actual = 0
+            set_pagina_actual(0)
 
     problema = problema_actual
     resultado = resultado_ref.current
@@ -265,10 +335,29 @@ def VistaCortesGomory(controlador: ControladorEntera):
     else:
         status_row = _crear_alerta_status(f"Conclusión: {resultado.estado.value}", AMBER, ft.Icons.INFO_OUTLINE)
 
-    resultados_column = ft.Column(
-        _renderizar_paneles_resultados(resultado, problema),
-        spacing=14
-    )
+    paginas = _calcular_paginas(resultado)
+    total_paginas = len(paginas)
+
+    controles_resultado: List[ft.Control] = [_renderizar_resumen(resultado, problema)]
+
+    if total_paginas > 0:
+        indice_pagina = max(0, min(pagina_actual, total_paginas - 1))
+
+        def ir_a_pagina(nueva: int) -> None:
+            nueva = max(0, min(nueva, total_paginas - 1))
+            set_pagina_actual(nueva)
+
+        offset_paso = sum(len(p) for p in paginas[:indice_pagina])
+
+        if total_paginas > 1:
+            controles_resultado.append(_renderizar_controles_paginacion(indice_pagina, total_paginas, ir_a_pagina))
+
+        controles_resultado.extend(_renderizar_pagina(paginas[indice_pagina], indice_pagina, offset_paso))
+
+        if total_paginas > 1:
+            controles_resultado.append(_renderizar_controles_paginacion(indice_pagina, total_paginas, ir_a_pagina))
+
+    resultados_column = ft.Column(controles_resultado, spacing=14)
 
     return ft.Column(
         [header, ft.Divider(color=BORDER_COLOR, height=1), status_row, resultados_column],

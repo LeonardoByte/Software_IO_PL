@@ -154,7 +154,7 @@ def tabla_iteraciones(respuesta: RespuestaNoLineal) -> ft.Container:
             ft.DataTable(
                 columns=encabezados,
                 rows=filas,
-                border=ft.border.all(1, BORDER),
+                border=ft.Border.all(1, BORDER),
                 border_radius=8,
                 heading_row_color="#1e2130",
                 data_row_min_height=36,

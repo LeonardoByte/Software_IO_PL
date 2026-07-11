@@ -28,6 +28,10 @@ class SolucionadorBranchAndBound:
     utilizando el algoritmo de Ramificación y Acotamiento (Branch and Bound).
     """
 
+    # Presupuesto máximo de nodos a explorar para evitar bucles infinitos
+    # (p. ej. cuando la relajación continua devuelve valores fuera de las cotas).
+    MAX_NODOS: int = 10_000
+
     def __init__(self, metodo_lineal: Optional[int] = None) -> None:
         """
         Inicializa el solucionador.
@@ -70,7 +74,21 @@ class SolucionadorBranchAndBound:
 
         es_max = (problema.tipo == TipoOptimizacion.MAX)
 
+        nodos_procesados = 0
+
         while stack:
+            # Red de seguridad: si se supera el presupuesto de nodos, detener la
+            # exploración y devolver la mejor solución incumbente hallada (si existe).
+            if nodos_procesados >= self.MAX_NODOS:
+                return RespuestaBranchAndBound(
+                    estado=EstadoProblema.LIMITE_ITERACIONES,
+                    mensaje=EstadoProblema.LIMITE_ITERACIONES.value,
+                    z_optimo=z_optimo,
+                    variables_decision=x_optimo,
+                    arbol_nodos=arbol_nodos
+                )
+            nodos_procesados += 1
+
             id_nodo, id_padre, ramificacion, L, U = stack.pop()
 
             # Verificar si hay contradicción de cotas inmediata
@@ -178,15 +196,41 @@ class SolucionadorBranchAndBound:
             else:
                 # Ramificar en variable idx_frac
                 val_frac = x_relax[idx_frac]
-                floor_val = math.floor(float(val_frac))
-                ceil_val = math.ceil(float(val_frac))
 
                 if is_float:
-                    floor_val = float(floor_val)
-                    ceil_val = float(ceil_val)
+                    floor_val = float(math.floor(val_frac))
+                    ceil_val = float(math.ceil(val_frac))
                 else:
-                    floor_val = Fraction(floor_val)
-                    ceil_val = Fraction(ceil_val)
+                    # Floor/ceil enteros exactos sobre el propio Fraction: convertir a
+                    # float perdería precisión para numeradores/denominadores grandes
+                    # y podría redondear al lado equivocado de un límite entero.
+                    floor_val = Fraction(val_frac.numerator // val_frac.denominator)
+                    ceil_val = Fraction(-(-val_frac.numerator // val_frac.denominator))
+
+                # Guardia de tightening: solo ramificamos hacia un hijo si sus
+                # cotas realmente se estrechan respecto a las del nodo padre.
+                # Derecha (X >= ceil): estricto si ceil_val supera la cota inferior actual.
+                # Izquierda (X <= floor): estricto si floor_val es menor que la cota
+                # superior actual (U None significa +infinito, así cualquier floor la estrecha).
+                cota_sup_actual = U[idx_frac]
+                der_estrecha = ceil_val > L[idx_frac]
+                izq_estrecha = (cota_sup_actual is None) or (floor_val < cota_sup_actual)
+
+                if not der_estrecha and not izq_estrecha:
+                    # Ningún hijo estrecharía las cotas: la relajación devolvió un valor
+                    # fraccionario fuera de las cotas del propio nodo (síntoma de que el
+                    # solver continuo entregó un óptimo espurio / degeneración numérica).
+                    # No ramificamos para evitar clonar el subproblema infinitamente.
+                    arbol_nodos.append(NodoBranchAndBound(
+                        id_nodo=id_nodo,
+                        id_padre=id_padre,
+                        ramificacion=ramificacion,
+                        z_local=z_real,
+                        variables_locales=x_relax,
+                        estado_nodo=EstadoProblema.DIFICULTADES_NUMERICAS,
+                        mensaje="Podado: relajación fuera de las cotas del nodo (posible degeneración numérica)"
+                    ))
+                    continue
 
                 # Registrar nodo actual de ramificación
                 arbol_nodos.append(NodoBranchAndBound(
@@ -199,24 +243,24 @@ class SolucionadorBranchAndBound:
                     mensaje=f"Ramificación en X{idx_frac + 1} = {val_frac}"
                 ))
 
-                # Crear hijos
-                id_counter += 1
-                id_hijo_der = id_counter
-                L_der = list(L)
-                U_der = list(U)
-                L_der[idx_frac] = max(L_der[idx_frac], ceil_val)
-                ram_der = RamificacionVariable(idx_frac, ceil_val, False)
+                # Crear hijos (solo aquellos que realmente estrechen las cotas)
+                if der_estrecha:
+                    id_counter += 1
+                    id_hijo_der = id_counter
+                    L_der = list(L)
+                    U_der = list(U)
+                    L_der[idx_frac] = max(L_der[idx_frac], ceil_val)
+                    ram_der = RamificacionVariable(idx_frac, ceil_val, False)
+                    stack.append((id_hijo_der, id_nodo, ram_der, L_der, U_der))
 
-                id_counter += 1
-                id_hijo_izq = id_counter
-                L_izq = list(L)
-                U_izq = list(U)
-                U_izq[idx_frac] = min(U_izq[idx_frac], floor_val) if U_izq[idx_frac] is not None else floor_val
-                ram_izq = RamificacionVariable(idx_frac, floor_val, True)
-
-                # Empujar a la pila (izq primero, der después, o viceversa)
-                stack.append((id_hijo_der, id_nodo, ram_der, L_der, U_der))
-                stack.append((id_hijo_izq, id_nodo, ram_izq, L_izq, U_izq))
+                if izq_estrecha:
+                    id_counter += 1
+                    id_hijo_izq = id_counter
+                    L_izq = list(L)
+                    U_izq = list(U)
+                    U_izq[idx_frac] = min(U_izq[idx_frac], floor_val) if U_izq[idx_frac] is not None else floor_val
+                    ram_izq = RamificacionVariable(idx_frac, floor_val, True)
+                    stack.append((id_hijo_izq, id_nodo, ram_izq, L_izq, U_izq))
 
         if z_optimo is None:
             return RespuestaBranchAndBound(
@@ -268,10 +312,23 @@ class SolucionadorBranchAndBound:
         if tiene_ge_eq:
             return SolucionadorDosFases()
         else:
-            return SolucionadorSimplex()
+            # Aunque el problema raíz solo tenga restricciones '<=', los subproblemas
+            # generados por variable shifting en B&B pueden producir filas con RHS
+            # negativo (implícitamente '>='), que el Simplex estándar no resuelve
+            # correctamente (las rechaza en bloque como INVIABLE, podando subárboles
+            # factibles). Usamos Dos Fases, que sí maneja RHS negativo tras normalizar.
+            return SolucionadorDosFases()
 
     def _resolver_relajacion(self, solver, problem_sub: ProblemaPL) -> Tuple[EstadoProblema, Optional[Union[Fraction, float]], Optional[List[Union[Fraction, float]]]]:
         res = solver.resolver(problem_sub)
+
+        # El variable shifting de _construir_subproblema puede producir filas con RHS
+        # negativo incluso partiendo de un problema '<=' puro. Si el solver elegido
+        # (ej. Simplex forzado vía metodo_lineal=2) no soporta esa forma, reintentar
+        # con Dos Fases en vez de podar el nodo como si fuera irresoluble.
+        if isinstance(res, RespuestaTabularPL) and res.estado == EstadoProblema.REQUIERE_OTRO_METODO and not isinstance(solver, SolucionadorDosFases):
+            res = SolucionadorDosFases().resolver(problem_sub)
+
         if isinstance(res, RespuestaSciPyPL):
             if res.estado == EstadoProblema.OPTIMO and res.x is not None and res.fun is not None:
                 return EstadoProblema.OPTIMO, res.fun, res.x

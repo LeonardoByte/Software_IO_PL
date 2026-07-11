@@ -109,33 +109,40 @@ class ParserSintactico:
         arboles = []
         is_csv = is_csv_format(texto)
 
-        for line in texto.splitlines():
-            line = line.strip()
+        for numero_linea, line_original in enumerate(texto.splitlines(), start=1):
+            line = line_original.strip()
             if not line or line.startswith("#") or line.startswith("//"):
                 continue
 
-            if is_csv:
-                tokens = tokenize_csv(line)
-            else:
-                tokens = tokenize_algebraic(line)
-
-            node = self._parse_tokens(tokens, total_variables, tipos_variables, is_csv)
-
-            # Estandarizar el nodo de retorno a NodoLogico
-            if isinstance(node, Restriccion):
-                node = NodoLogico(OperadorMGrande.CONJUNCION_RESTRICCIONES, hijos=[node])
-            elif isinstance(node, str):
-                # Regla Implícita: si aparece sola una variable BINARIA, asumimos var = 1
-                idx = int(node[1:]) - 1
-                if idx < len(tipos_variables) and tipos_variables[idx] == TipoVariable.BINARIA:
-                    coefs = [Fraction(0)] * total_variables
-                    coefs[idx] = Fraction(1)
-                    restr = Restriccion(coefs, SignoRestriccion.IGUAL, Fraction(1))
-                    node = NodoLogico(OperadorMGrande.CONJUNCION_RESTRICCIONES, hijos=[restr])
+            try:
+                if is_csv:
+                    tokens = tokenize_csv(line)
                 else:
-                    raise ValueError(
-                        f"La variable continua/entera '{node}' no se puede declarar sola."
-                    )
+                    tokens = tokenize_algebraic(line)
+
+                node = self._parse_tokens(tokens, total_variables, tipos_variables, is_csv)
+
+                # Estandarizar el nodo de retorno a NodoLogico
+                if isinstance(node, Restriccion):
+                    node = NodoLogico(OperadorMGrande.CONJUNCION_RESTRICCIONES, hijos=[node])
+                elif isinstance(node, str):
+                    # Regla Implícita: si aparece sola una variable BINARIA, asumimos var = 1
+                    idx = int(node[1:]) - 1
+                    if idx < len(tipos_variables) and tipos_variables[idx] == TipoVariable.BINARIA:
+                        coefs = [Fraction(0)] * total_variables
+                        coefs[idx] = Fraction(1)
+                        restr = Restriccion(coefs, SignoRestriccion.IGUAL, Fraction(1))
+                        node = NodoLogico(OperadorMGrande.CONJUNCION_RESTRICCIONES, hijos=[restr])
+                    else:
+                        raise ValueError(
+                            f"La variable continua/entera '{node}' no se puede declarar sola."
+                        )
+            except Exception as error_linea:
+                # Re-lanzar con contexto de línea y contenido exacto: sin esto, errores como
+                # IndexError/KeyError internos llegan al usuario sin indicar qué línea falló.
+                raise ValueError(
+                    f"Error de sintaxis en la línea {numero_linea} (\"{line}\"): {error_linea}"
+                ) from error_linea
 
             arboles.append(node)
 
@@ -262,12 +269,36 @@ class ParserSintactico:
             right = self._parse_tokens(tokens[idx_arr + 1 :], total_variables, tipos_variables, is_csv)
             return NodoLogico(OperadorLogico.IMPLICACION, hijos=[left, right])
 
-        # 8. EQUIVALENCIA (x1 == x2)
+        # 8. EQUIVALENCIA (x1 == x2) vs. restricción algebraica/CSV de igualdad (x1+x2==10 / 2,1,==,10)
+        # '==' es ambiguo: es tanto el operador de co-requisito lógico entre DOS
+        # VARIABLES SUELTAS como el signo de igualdad matemática estándar. Solo se
+        # interpreta como EQUIVALENCIA cuando ambos lados son exactamente una
+        # referencia de variable suelta (sin coeficientes, sin '+'/'-', sin constantes);
+        # cualquier otra cosa (ej. una expresión con varios términos o un RHS numérico)
+        # es una restricción algebraica/CSV de igualdad ordinaria.
         if "==" in tokens:
             idx_eq2 = tokens.index("==")
-            left = self._parse_tokens(tokens[:idx_eq2], total_variables, tipos_variables, is_csv)
-            right = self._parse_tokens(tokens[idx_eq2 + 1 :], total_variables, tipos_variables, is_csv)
-            return NodoLogico(OperadorLogico.EQUIVALENCIA, hijos=[left, right])
+            izq_tokens = tokens[:idx_eq2]
+            der_tokens = tokens[idx_eq2 + 1:]
+
+            es_equivalencia_logica = (
+                len(izq_tokens) == 1 and len(der_tokens) == 1
+                and self._es_token_variable_suelta(izq_tokens[0], is_csv)
+                and self._es_token_variable_suelta(der_tokens[0], is_csv)
+                # Con una sola variable declarada, un índice CSV suelto y un
+                # coeficiente CSV de una restricción de un solo término son
+                # indistinguibles por forma: se prioriza la lectura algebraica.
+                and not (is_csv and total_variables == 1)
+            )
+
+            if es_equivalencia_logica:
+                left = self._parse_tokens(izq_tokens, total_variables, tipos_variables, is_csv)
+                right = self._parse_tokens(der_tokens, total_variables, tipos_variables, is_csv)
+                return NodoLogico(OperadorLogico.EQUIVALENCIA, hijos=[left, right])
+
+            if is_csv:
+                return self._construir_restriccion_csv(tokens, total_variables)
+            return self._parse_algebraic_constraint(" ".join(tokens), total_variables)
 
         # 9. ACTIVACION_UMBRAL (x1 ACTIVADO_POR x2)
         if "ACTIVADO_POR" in tokens:
@@ -317,25 +348,49 @@ class ParserSintactico:
             right = self._parse_tokens(tokens[idx_xor + 1 :], total_variables, tipos_variables, is_csv)
             return NodoLogico(OperadorAsignacionLogica.XOR_EVAL, hijos=[left, right])
 
-        joined = " ".join(tokens)
-        if any(op in joined for op in (">=", "<=", "==", ">", "<", "=")):
+        if is_csv:
             try:
-                return self._parse_algebraic_constraint(joined, total_variables)
+                return self._construir_restriccion_csv(tokens, total_variables)
             except Exception:
                 pass
+        else:
+            joined = " ".join(tokens)
+            if any(op in joined for op in (">=", "<=", "==", ">", "<", "=")):
+                try:
+                    return self._parse_algebraic_constraint(joined, total_variables)
+                except Exception:
+                    pass
 
         raise ValueError(f"No se pudo parsear la expresión: {' '.join(tokens)}")
 
-    def _parse_csv_constraint(self, token: str, total_variables: int) -> Restriccion:
-        """Parsea una restricción en formato CSV: (2, 0, <=, 40)"""
-        token = token.strip("()")
-        parts = [p.strip() for p in token.split(",") if p.strip()]
-        
+    def _es_token_variable_suelta(self, tok: str, is_csv: bool) -> bool:
+        """
+        True si 'tok' es una referencia de variable suelta: sin coeficientes, sin
+        operadores aritméticos, sin constantes numéricas. Siempre 'xN'; en modo CSV
+        también un índice numérico plano ('N'), ya que allí las variables se
+        referencian por su posición directa (ver 'Regla Implícita' del manual).
+        """
+        if tok.startswith("x") and tok[1:].isdigit():
+            return True
+        if is_csv and tok.isdigit():
+            return True
+        return False
+
+    def _construir_restriccion_csv(self, parts: List[str], total_variables: int) -> Restriccion:
+        """
+        Construye una Restriccion a partir de una lista de campos CSV ya separados
+        por comas: [coef1, ..., coefN, signo, rhs]. Usado tanto para bloques CSV
+        parentizados como para líneas CSV planas de nivel superior (ej. '2, 1, <=, 10').
+        """
+        if len(parts) < 2:
+            raise ValueError(
+                f"Restricción CSV incompleta: se esperaban coeficientes, signo y RHS, se recibió: {', '.join(parts)}"
+            )
+
         sign_str = parts[-2]
         rhs_str = parts[-1]
         coefs_str = parts[:-2]
 
-        # Mapear signo
         if sign_str == "<=":
             sign = SignoRestriccion.MENOR_IGUAL
         elif sign_str == ">=":
@@ -346,11 +401,16 @@ class ParserSintactico:
             raise ValueError(f"Signo de restricción no soportado: {sign_str}")
 
         coefs = [Fraction(c) for c in coefs_str]
-        # Pad/align
         if len(coefs) < total_variables:
             coefs += [Fraction(0)] * (total_variables - len(coefs))
 
         return Restriccion(coefs, sign, Fraction(rhs_str))
+
+    def _parse_csv_constraint(self, token: str, total_variables: int) -> Restriccion:
+        """Parsea una restricción en formato CSV: (2, 0, <=, 40)"""
+        token = token.strip("()")
+        parts = [p.strip() for p in token.split(",") if p.strip()]
+        return self._construir_restriccion_csv(parts, total_variables)
 
     def _parse_algebraic_constraint(self, text: str, total_variables: int) -> Restriccion:
         """Parsea una restricción en formato algebraico: 2x1 - 3x2 <= 10"""

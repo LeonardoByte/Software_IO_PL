@@ -3,6 +3,12 @@ from enum import Enum, unique
 
 @unique
 class TipoVariable(Enum):
+    """
+    Categoría de cada variable de decisión.
+    NOTA: todo el sistema (solvers tabulares, Branch and Bound, Planos de Corte)
+    asume x >= 0 para las tres categorías; no existe forma de declarar una
+    variable CONTINUA o ENTERA libre/negativa.
+    """
     CONTINUA = "CONTINUA"
     ENTERA = "ENTERA"
     BINARIA = "BINARIA"
@@ -132,7 +138,10 @@ class OperadorMGrande(Enum):
     
     """--------------------------------------------------------------------------------
     3. SELECCION_K_DE_N -> Sintaxis UI: CUMPLIR K DE [ (Ecuación1), ..., (EcuaciónN) ]
-       Concepto: Paquete de N restricciones donde se debe cumplir un número exacto 'K' de ellas.
+       Concepto: Paquete de N restricciones donde se activan 'y_i' de control para K de ellas.
+                 ⚠️ Garantiza que AL MENOS K restricciones se cumplan (las y_i=1 lo fuerzan);
+                 las N-K restantes quedan relajadas (y_i=0), pero nada impide que también se
+                 cumplan por sí solas si el resto del modelo así lo permite. No es "exactamente K".
        Variables implicadas: Cualquier combinación (CONTINUA, ENTERA, BINARIA).
        Mecanismo Backend: Asocia un interruptor binario 'y_i' a cada una de las N restricciones.
                           Aplica la holgura con M a las filas: f_i(x) <= b_i + M(1 - y_i)

@@ -71,12 +71,14 @@ class SolucionadorSimplex:
                     mensaje=EstadoProblema.REQUIERE_OTRO_METODO.value
                 )
 
-        # --- 3. Detectar inviabilidad inmediata por RHS negativo ---
+        # --- 3. Detectar RHS negativo: la base canónica de holguras no sería factible,
+        # pero eso NO implica que el problema en sí sea inviable (ej. -x1 <= -5 equivale
+        # a x1 >= 5). Este método tabular estándar no soporta ese caso; se delega a otro.
         for restriccion in problema.restricciones:
             if Fraction(restriccion.rhs) < Fraction(0):
                 return RespuestaTabularPL(
-                    estado=EstadoProblema.INVIABLE,
-                    mensaje=EstadoProblema.INVIABLE.value
+                    estado=EstadoProblema.REQUIERE_OTRO_METODO,
+                    mensaje=EstadoProblema.REQUIERE_OTRO_METODO.value
                 )
 
         # --- 4. Construcción estructural del Tableau inicial ---

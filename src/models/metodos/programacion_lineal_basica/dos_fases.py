@@ -76,6 +76,13 @@ class SolucionadorDosFases:
         RespuestaTabularPL
             Entidad inmutable con el resultado final y las iteraciones autodescriptivas.
         """
+        # --- 0. Normalizar restricciones con RHS negativo ---
+        # Un RHS negativo dejaría la base inicial de holgura en un valor negativo
+        # (base infactible). Al multiplicar la fila por -1 y voltear el signo, la
+        # fila pasa a '>=' (o se mantiene '=='), lo que fuerza la inclusión de una
+        # variable artificial y permite que la Fase 1 detecte la inviabilidad real.
+        problema = self._normalizar_rhs_negativo(problema)
+
         # --- 1. Inicialización y extracción de atributos de dominio ---
         self._n_vars = problema.total_variables
         self._n_restricciones = problema.total_restricciones
@@ -116,6 +123,12 @@ class SolucionadorDosFases:
                 iteraciones=iteraciones_f1
             )
 
+        # Si alguna artificial quedó básica en la Fase 1 (empate degenerado, valor 0),
+        # expulsarla de la base antes de construir la Fase 2: de lo contrario
+        # _construir_tableau_f2 la descartaría en bloque, desalineando self._base
+        # respecto a las filas del tableau para toda fila subsiguiente.
+        tableau_f1_final = self._expulsar_artificiales_basicas(tableau_f1_final)
+
         # ── FASE 2: Optimización del modelo lineal original ───────────
         tableau_f2 = self._construir_tableau_f2(tableau_f1_final)
         tableau_f2 = self._algebraizar_fila_z(tableau_f2)
@@ -134,6 +147,37 @@ class SolucionadorDosFases:
             )
 
         return self._construir_resultado_final(resultado_f2, tableau_f2_final, iteraciones_totales)
+
+    def _normalizar_rhs_negativo(self, problema: ProblemaPL) -> ProblemaPL:
+        """
+        Devuelve un ProblemaPL equivalente donde toda restricción con RHS negativo
+        se reescribe multiplicando coeficientes y RHS por -1 y volteando el signo
+        (<= <-> >=, == se mantiene). No muta las entidades del llamador.
+        """
+        restricciones_norm: List[Restriccion] = []
+        for r in problema.restricciones:
+            if Fraction(r.rhs) < Fraction(0):
+                nuevos_coef = [Fraction(c) * -1 for c in r.coeficientes]
+                nuevo_rhs = Fraction(r.rhs) * -1
+                if r.signo == SignoRestriccion.MENOR_IGUAL:
+                    nuevo_signo = SignoRestriccion.MAYOR_IGUAL
+                elif r.signo == SignoRestriccion.MAYOR_IGUAL:
+                    nuevo_signo = SignoRestriccion.MENOR_IGUAL
+                else:
+                    nuevo_signo = SignoRestriccion.IGUAL
+                restricciones_norm.append(Restriccion(
+                    coeficientes=nuevos_coef,
+                    signo=nuevo_signo,
+                    rhs=nuevo_rhs
+                ))
+            else:
+                restricciones_norm.append(r)
+
+        return ProblemaPL(
+            tipo=problema.tipo,
+            objetivo=list(problema.objetivo),
+            restricciones=restricciones_norm
+        )
 
     def _planificar_variables(self, restricciones: List[Restriccion]) -> List[Dict[str, Any]]:
         """Mapea las necesidades de variables de holgura, exceso y artificiales por restricción."""
@@ -243,6 +287,34 @@ class SolucionadorDosFases:
                     T[0, :] = [T[0, k] - factor * T[fila_restr, k] for k in range(T.shape[1])]
         return T
 
+    def _expulsar_artificiales_basicas(self, T: np.ndarray) -> np.ndarray:
+        """
+        Si una variable artificial permanece básica al terminar la Fase 1 (empate
+        degenerado con valor 0, sin que el pivoteo la haya expulsado), se intenta
+        reemplazarla en la base por cualquier columna real/holgura con coeficiente
+        no nulo en su fila (pivote degenerado válido, ya que el RHS de esa fila es 0).
+        Si la fila es totalmente redundante (ninguna columna no-artificial tiene
+        coeficiente no nulo), la artificial se deja básica: _construir_tableau_f2
+        debe conservar esa columna en vez de descartarla, o self._base quedaría
+        más corta que la cantidad de filas del tableau.
+        """
+        T = T.copy()
+        for i, col_base in enumerate(self._base):
+            if col_base not in self._idx_artificiales_f1:
+                continue
+            fila = i + 1
+            col_pivote = None
+            for j in range(T.shape[1] - 1):
+                if j in self._idx_artificiales_f1:
+                    continue
+                if T[fila, j] != Fraction(0):
+                    col_pivote = j
+                    break
+            if col_pivote is not None:
+                T = self._pivotear(T, fila, col_pivote)
+                self._base[i] = col_pivote
+        return T
+
     def _construir_tableau_f2(self, T_f1: np.ndarray) -> np.ndarray:
         """Expulsa las columnas artificiales y recompone las filas con los costos reales originales."""
         n_cols_f1 = T_f1.shape[1]
@@ -250,10 +322,13 @@ class SolucionadorDosFases:
         nuevos_nombres: List[str] = []
         self._mapa_col = {}
         nuevo_idx = 0
-        
+
         for j in range(n_cols_f1):
             nombre_j = self._nombres_f1[j]
-            if j in self._idx_artificiales_f1:
+            # Solo se descartan artificiales que ya no están básicas; una artificial
+            # degenerada-básica (fila redundante, ver _expulsar_artificiales_basicas)
+            # debe conservar su columna para no desalinear self._base.
+            if j in self._idx_artificiales_f1 and j not in self._base:
                 self._mapa_col[j] = None
             else:
                 self._mapa_col[j] = nuevo_idx
