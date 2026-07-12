@@ -44,26 +44,7 @@ def VistaGradiente(controlador: ControladorNoLineal):
 
     tabla = tabla_iteraciones(respuesta)
 
-    ascenso = problema.tipo.value == "MAX"
-    nota = ft.Container(
-        content=ft.Column([
-            ft.Text("Cómo funciona", size=12, weight=ft.FontWeight.W_700, color=ACCENT),
-            ft.Text(
-                f"Dirección de búsqueda: d_k = {'+ ∇f(x_k)  (ascenso)' if ascenso else '− ∇f(x_k)  (descenso)'}\n"
-                "Paso α_k: retroceso (backtracking) hasta garantizar mejora.\n"
-                "Actualización: x_{k+1} = x_k + α_k · d_k\n"
-                "Criterio de parada: ‖∇f(x_k)‖ < tolerancia",
-                size=12, color=TEXT_M,
-            ),
-        ], spacing=6),
-        padding=14, border_radius=10, bgcolor=BG_CARD,
-        border=ft.Border(
-            top=ft.BorderSide(1, BORDER), bottom=ft.BorderSide(1, BORDER),
-            left=ft.BorderSide(1, BORDER), right=ft.BorderSide(1, BORDER),
-        ),
-    )
-
     return ft.Column(
-        [header, ft.Divider(color=BORDER, height=1), nota, tabla],
+        [header, ft.Divider(color=BORDER, height=1), tabla],
         spacing=16, expand=True, scroll=ft.ScrollMode.AUTO,
     )

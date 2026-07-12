@@ -1,6 +1,6 @@
 # src/models/metodos/programacion_no_lineal/seccion_aurea.py
 """
-Búsqueda de la Sección Áurea (Golden Section Search).
+Bisección (Golden Section Search).
 Minimiza o maximiza una función unimodal de una variable en [a, b].
 """
 
@@ -16,13 +16,13 @@ from src.models.metodos.programacion_no_lineal.evaluador import construir_funcio
 PHI = (math.sqrt(5) - 1) / 2  # ≈ 0.6180339887
 
 
-class SolucionadorSeccionAurea:
-    METODO   = "Sección Áurea"
-    COLUMNAS = ["n", "a", "x₁", "x₂", "b", "f(x₁)", "f(x₂)", "b − a"]
+class SolucionadorBiseccion:
+    METODO   = "Bisección"
+    COLUMNAS = ["n", "a", "c", "d", "b", "f(c)", "f(d)", "b − a"]
 
     def resolver(self, problema: ProblemaNoLineal) -> RespuestaNoLineal:
         if not problema.es_univariable:
-            return self._error("La Sección Áurea requiere exactamente 1 variable.")
+            return self._error("La Bisección requiere exactamente 1 variable.")
         if problema.intervalo is None:
             return self._error("Debe especificar un intervalo [a, b].")
         if problema.intervalo[0] >= problema.intervalo[1]:
@@ -38,7 +38,7 @@ class SolucionadorSeccionAurea:
 
         for n in range(1, max_iter + 1):
             ancho = b - a
-            # Puntos interiores según la razón áurea
+            # Puntos interiores c y d según la proporción de búsqueda
             x1 = b - PHI * ancho   # ≈ a + 0.382(b-a)
             x2 = a + PHI * ancho   # ≈ a + 0.618(b-a)
             f1, f2 = f(x1), f(x2)
@@ -50,14 +50,14 @@ class SolucionadorSeccionAurea:
                 eliminar_derecha = f1 <= f2
 
             descripcion = (
-                f"f(x₁)={f1:.6g} {'≥' if es_max else '≤'} f(x₂)={f2:.6g} → "
-                f"{'eliminar [x₂,b]' if eliminar_derecha else 'eliminar [a,x₁]'}"
+                f"f(c)={f1:.6g} {'≥' if es_max else '≤'} f(d)={f2:.6g} → "
+                f"{'eliminar [d,b]' if eliminar_derecha else 'eliminar [a,c]'}"
             )
 
             iteraciones.append(IteracionNL(
                 numero=n,
-                datos={"a": a, "x₁": x1, "x₂": x2, "b": b,
-                       "f(x₁)": f1, "f(x₂)": f2, "b − a": ancho},
+                datos={"a": a, "c": x1, "d": x2, "b": b,
+                       "f(c)": f1, "f(d)": f2, "b − a": ancho},
                 descripcion=descripcion,
             ))
 
@@ -74,7 +74,7 @@ class SolucionadorSeccionAurea:
 
         return RespuestaNoLineal(
             estado=EstadoProblema.OPTIMO,
-            mensaje=f"Sección Áurea convergió en {len(iteraciones)} iteraciones. "
+            mensaje=f"Bisección convergió en {len(iteraciones)} iteraciones. "
                     f"Intervalo final: [{a:.6g}, {b:.6g}]",
             metodo=self.METODO,
             z_optimo=z_opt,

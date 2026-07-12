@@ -131,7 +131,6 @@ def tabla_iteraciones(respuesta: RespuestaNoLineal) -> ft.Container:
             ft.DataColumn(ft.Text(col, size=11, weight=ft.FontWeight.W_700, color=TEXT_M))
             for col in columnas_display
         ],
-        ft.DataColumn(ft.Text("Acción", size=11, weight=ft.FontWeight.W_700, color=TEXT_M)),
     ]
 
     filas = []
@@ -144,7 +143,6 @@ def tabla_iteraciones(respuesta: RespuestaNoLineal) -> ft.Container:
             except Exception:
                 texto = str(val)
             celdas.append(ft.DataCell(ft.Text(texto, size=11, color=TEXT_P)))
-        celdas.append(ft.DataCell(ft.Text(it.descripcion, size=10, color=TEXT_M)))
         filas.append(ft.DataRow(cells=celdas))
 
     return ft.Container(
@@ -154,7 +152,10 @@ def tabla_iteraciones(respuesta: RespuestaNoLineal) -> ft.Container:
             ft.DataTable(
                 columns=encabezados,
                 rows=filas,
-                border=ft.Border.all(1, BORDER),
+                border=ft.Border(
+                    top=ft.BorderSide(1, BORDER), bottom=ft.BorderSide(1, BORDER),
+                    left=ft.BorderSide(1, BORDER), right=ft.BorderSide(1, BORDER),
+                ),
                 border_radius=8,
                 heading_row_color="#1e2130",
                 data_row_min_height=36,

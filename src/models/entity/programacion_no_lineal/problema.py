@@ -22,7 +22,7 @@ class ProblemaNoLineal:
     funcion_str:   str                    # "3*x1**2 - 2*x1 + 5"
     variables:     Tuple[str, ...]        # ("x1",) o ("x1", "x2")
 
-    # Para métodos de intervalo (Sección Áurea)
+    # Para métodos de intervalo (Bisección)
     intervalo:     Optional[Tuple[float, float]] = None   # (a, b)
 
     # Para métodos iterativos (Newton, Gradiente, KKT)

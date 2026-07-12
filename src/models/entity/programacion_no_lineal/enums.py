@@ -5,7 +5,7 @@ from enum import Enum, unique
 
 @unique
 class TipoMetodoNL(Enum):
-    SECCION_AUREA = "Sección Áurea"
+    BISECCION     = "Bisección"
     NEWTON        = "Newton (1 Variable)"
     GRADIENTE     = "Gradiente (Steepest)"
     LAGRANGE      = "Multiplicadores de Lagrange"

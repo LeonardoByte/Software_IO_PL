@@ -4,7 +4,7 @@ Historial de problemas no lineales guardados en la sesión.
 """
 
 from __future__ import annotations
-from typing import Callable, List
+from typing import Callable, List, Optional
 import flet as ft
 
 from src.controller.controlador_no_lineal import ControladorNoLineal
@@ -18,6 +18,7 @@ TEXT_M   = "#6b7280"
 GREEN    = "#1d9e75"
 RED      = "#ef645f"
 AMBER    = "#f6ad55"
+BLUE     = "#2563eb"
 
 
 def _badge(texto: str, color: str) -> ft.Container:
@@ -50,16 +51,30 @@ def _resumen_vars(p: ProblemaNoLineal) -> str:
 
 
 @ft.component
-def VistaHistorialNL(controlador: ControladorNoLineal, navegar_a: Callable = None):
+def VistaHistorialNL(
+    controlador: ControladorNoLineal,
+    navegar_a: Optional[Callable] = None,
+    editar_callback: Optional[Callable] = None,
+):
     refresh, set_refresh = ft.use_state(0)
     status_msg, set_status = ft.use_state(("", ""))
 
     historial: List[ProblemaNoLineal] = controlador.obtener_historial_completo()
 
     def cargar(idx: int):
+        """Carga el problema como activo y navega al gráfico."""
         controlador.obtener_problema_por_indice(idx)
-        set_status(("Problema cargado como activo.", GREEN))
         if navegar_a:
+            navegar_a(2)
+
+    def clonar_y_editar(idx: int):
+        """Carga el problema como activo y navega al formulario de ingreso."""
+        controlador.obtener_problema_por_indice(idx)
+        if editar_callback:
+            h = controlador.obtener_historial_completo()
+            if idx < len(h):
+                editar_callback(h[idx])
+        elif navegar_a:
             navegar_a(0)
 
     def eliminar(idx: int):
@@ -72,7 +87,7 @@ def VistaHistorialNL(controlador: ControladorNoLineal, navegar_a: Callable = Non
         return ft.Container(
             content=ft.Column([
                 ft.Row([
-                    ft.Text(f"Problema PNL #{idx+1}", size=14,
+                    ft.Text(f"Problema PNL #{idx + 1}", size=14,
                             weight=ft.FontWeight.W_600, color=TEXT_P),
                     _badge(p.tipo.value, tipo_color),
                     _badge(f"{p.n_variables} variable(s)", "#374151"),
@@ -90,11 +105,10 @@ def VistaHistorialNL(controlador: ControladorNoLineal, navegar_a: Callable = Non
                 ),
                 ft.Text(_resumen_vars(p), size=11, color=TEXT_M),
                 ft.Row([
-                    _boton("Cargar y Activar", ft.Icons.UPLOAD,
-                           lambda _e, i=idx: cargar(i)),
-                    _boton("Eliminar", ft.Icons.DELETE_OUTLINE,
-                           lambda _e, i=idx: eliminar(i), color="#7f1d1d"),
-                ], spacing=8),
+                    _boton("Cargar y Activar", ft.Icons.UPLOAD,        lambda _e, i=idx: cargar(i)),
+                    _boton("Clonar y Editar",  ft.Icons.CONTENT_COPY,  lambda _e, i=idx: clonar_y_editar(i), color="#374151"),
+                    _boton("Eliminar",         ft.Icons.DELETE_OUTLINE, lambda _e, i=idx: eliminar(i),       color="#7f1d1d"),
+                ], spacing=8, wrap=True),
             ], spacing=10),
             padding=16, border_radius=12, bgcolor=BG_CARD,
             border=ft.Border(
@@ -103,10 +117,11 @@ def VistaHistorialNL(controlador: ControladorNoLineal, navegar_a: Callable = Non
             ),
         )
 
-    # estado
     if status_msg[0]:
         color = status_msg[1]
-        icono = ft.Icons.CHECK_CIRCLE if color == GREEN else ft.Icons.DELETE
+        icono = (ft.Icons.CHECK_CIRCLE if color == GREEN
+                 else ft.Icons.COPY if color == AMBER
+                 else ft.Icons.DELETE)
         barra = ft.Container(
             content=ft.Row([
                 ft.Icon(icono, color=color, size=15),

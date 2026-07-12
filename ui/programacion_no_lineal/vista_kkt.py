@@ -54,7 +54,10 @@ def _tabla_kkt(condiciones: list[CondicionKKT]) -> ft.Container:
             ft.Text("Condiciones KKT", size=13, weight=ft.FontWeight.W_600, color=TEXT_P),
             ft.DataTable(
                 columns=encabezados, rows=filas,
-                border=ft.Border.all(1, BORDER),
+                border=ft.Border(
+                    top=ft.BorderSide(1, BORDER), bottom=ft.BorderSide(1, BORDER),
+                    left=ft.BorderSide(1, BORDER), right=ft.BorderSide(1, BORDER),
+                ),
                 border_radius=8,
                 heading_row_color="#1e2130",
                 data_row_min_height=38,
